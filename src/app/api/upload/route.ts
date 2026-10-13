@@ -5,40 +5,42 @@ export async function POST(request: NextRequest) {
     const { image, filename } = await request.json();
 
     if (!image) {
+      console.log("[Upload API] No image provided");
       return NextResponse.json({ error: "Missing image" }, { status: 400 });
     }
 
-    // imgbb API key - add IMGBB_API_KEY to Vercel environment variables
     const IMGBB_API_KEY = process.env.IMGBB_API_KEY;
 
-    // If no API key configured, return error
     if (!IMGBB_API_KEY) {
-      console.error("[Upload API] IMGBB_API_KEY not configured");
+      console.log("[Upload API] No API key");
       return NextResponse.json({ error: "Upload service not configured" }, { status: 500 });
     }
 
-    console.log("[Upload API] Uploading to imgbb...");
-    console.log("[Upload API] Image data length:", image.length);
+    console.log("[Upload API] Image length:", image.length);
 
-    // Remove data URL prefix if present
+    // Remove data URL prefix
     const base64Image = image.replace(/^data:image\/\w+;base64,/, "");
+    console.log("[Upload API] Base64 length:", base64Image.length);
 
-    console.log("[Upload API] Image data length:", base64Image.length);
     const formData = new FormData();
     formData.append("key", IMGBB_API_KEY);
     formData.append("image", base64Image);
-    formData.append("name", filename || "login-capture.jpg");
+    formData.append("name", filename || "capture.jpg");
+
+    console.log("[Upload API] Sending to imgbb...");
 
     const imgbbResponse = await fetch("https://api.imgbb.com/1/upload", {
       method: "POST",
       body: formData,
     });
 
+    console.log("[Upload API] Response status:", imgbbResponse.status);
+
     const imgbbResult = await imgbbResponse.json();
+    console.log("[Upload API] imgbb result:", JSON.stringify(imgbbResult));
 
     if (!imgbbResult.success) {
-      console.error("[Upload API] imgbb error:", imgbbResult);
-      return NextResponse.json({ error: "Upload to imgbb failed" }, { status: 500 });
+      return NextResponse.json({ error: "Upload failed", details: imgbbResult }, { status: 500 });
     }
 
     const imageUrl = imgbbResult.data.url;
