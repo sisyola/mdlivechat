@@ -30,11 +30,6 @@ export default async function SettingsPage({
       title: "Install Widget",
       desc: "Copy script embed untuk website lu",
     },
-    {
-      href: `${basePath}/security`,
-      title: "Security & Alerts",
-      desc: "Notifikasi login ke Discord + webcam capture",
-    },
   ];
 
   return (
