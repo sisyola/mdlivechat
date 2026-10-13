@@ -4,6 +4,7 @@ import { createClient } from "@/lib/supabase/client";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useState, Suspense } from "react";
 import Link from "next/link";
+import AutoRedirect from "@/components/AutoRedirect";
 
 function LoginForm() {
   const [email, setEmail] = useState("");

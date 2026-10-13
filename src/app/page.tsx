@@ -1,5 +1,7 @@
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
+import { redirect } from "next/navigation";
+import HomeAuthCheck from "@/components/HomeAuthCheck";
 
 const APK_URL = "https://tfuowbybtslzseycfdju.supabase.co/storage/v1/object/public/apk/MDLIVECHAT.apk";
 
@@ -9,7 +11,37 @@ export default async function HomePage() {
     data: { user },
   } = await supabase.auth.getUser();
 
+  // If logged in, redirect to dashboard
+  if (user) {
+    // Check if master admin
+    const { data: profile } = await supabase
+      .from("profiles")
+      .select("global_role")
+      .eq("id", user.id)
+      .single();
+
+    if (profile?.global_role === "master_admin") {
+      redirect("/master");
+    }
+
+    // Get user's account
+    const { data: accounts } = await supabase
+      .from("accounts")
+      .select("id")
+      .eq("owner_id", user.id)
+      .eq("status", "active")
+      .single();
+
+    if (accounts?.id) {
+      redirect(`/dashboard/${accounts.id}/inbox`);
+    }
+
+    redirect("/dashboard");
+  }
+
   return (
+    <>
+      <HomeAuthCheck />
     <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-indigo-50">
       <nav className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 flex justify-between items-center">
         <div className="flex items-center gap-2">
@@ -187,5 +219,6 @@ export default async function HomePage() {
         Built with Next.js + Supabase. Deploy gratis di Vercel.
       </footer>
     </div>
+    </>
   );
 }
