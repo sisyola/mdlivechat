@@ -19,25 +19,34 @@ const STORAGE_KEY = "mdlivechat-auth";
 async function getStoredSession() {
   if (typeof window === "undefined") return null;
   if (Capacitor.isNativePlatform()) {
+    // Try Capacitor Preferences first
     try {
       const { value } = await Preferences.get({ key: STORAGE_KEY + "-auth-token" });
       if (value) {
         const parsed = JSON.parse(value);
-        if (parsed?.access_token) return parsed;
+        if (parsed?.access_token) {
+          console.log("[Dashboard] session from Preferences");
+          return parsed;
+        }
       }
     } catch (err) {
       console.error("Failed to read from Preferences:", err);
     }
-    return null;
   }
-  // Web: use document.cookie or localStorage
+  // Try localStorage (works in both web and native WebView)
   try {
-    const stored = localStorage.getItem("mdlivechat-auth-auth-token");
+    const stored = localStorage.getItem(STORAGE_KEY + "-auth-token");
     if (stored) {
       const parsed = JSON.parse(stored);
-      if (parsed?.access_token) return parsed;
+      if (parsed?.access_token) {
+        console.log("[Dashboard] session from localStorage");
+        return parsed;
+      }
     }
-  } catch {}
+  } catch (err) {
+    console.error("Failed to read from localStorage:", err);
+  }
+  console.log("[Dashboard] no session found anywhere");
   return null;
 }
 

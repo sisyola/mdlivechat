@@ -58,18 +58,28 @@ function LoginForm() {
       const authData = await authRes.json();
       console.log("[Login] Got tokens");
 
-      // Persist session tokens directly to Capacitor Preferences on native
-      // This bypasses the custom cookies adapter entirely
+      // Persist session tokens to BOTH Capacitor Preferences AND localStorage
+      // Capacitor WebView localStorage is persistent during app lifetime
+      const sessionData = {
+        access_token: authData.access_token,
+        refresh_token: authData.refresh_token,
+        expires_at: authData.expires_at,
+        expires_in: authData.expires_in,
+        token_type: authData.token_type,
+        user: authData.user,
+      };
+
+      // Always save to localStorage (works in both web & native WebView)
+      try {
+        localStorage.setItem("mdlivechat-auth-auth-token", JSON.stringify(sessionData));
+        localStorage.setItem("mdlivechat-auth-auth-token-code-verifier", authData.refresh_token);
+        console.log("[Login] Saved session to localStorage");
+      } catch (e) {
+        console.error("[Login] localStorage save failed:", e);
+      }
+
       if (isNative) {
         try {
-          const sessionData = {
-            access_token: authData.access_token,
-            refresh_token: authData.refresh_token,
-            expires_at: authData.expires_at,
-            expires_in: authData.expires_in,
-            token_type: authData.token_type,
-            user: authData.user,
-          };
           await Preferences.set({
             key: "mdlivechat-auth-auth-token",
             value: JSON.stringify(sessionData),
