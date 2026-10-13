@@ -23,13 +23,24 @@ function LoginForm() {
 
     const supabase = createClient();
 
+    // Safety timeout - kalo 15 detik ga ada response, reset
+    const timeoutId = setTimeout(() => {
+      if (submittingRef.current) {
+        submittingRef.current = false;
+        setLoading(false);
+        setError("Request timeout. Cek koneksi internet lu.");
+      }
+    }, 15000);
+
     try {
+      console.log("[Login] Starting signInWithPassword...");
       const { data, error } = await supabase.auth.signInWithPassword({
         email,
         password,
       });
 
       if (error) {
+        console.error("[Login] Auth error:", error);
         setError(error.message);
         return;
       }
@@ -39,6 +50,7 @@ function LoginForm() {
         return;
       }
 
+      console.log("[Login] Success, fetching profile & accounts...");
       const { data: profile } = await supabase
         .from("profiles")
         .select("global_role, full_name")
@@ -53,8 +65,9 @@ function LoginForm() {
       const hasSuspended = accounts?.some((a) => a.status === "suspended");
 
       if (profile?.global_role === "master_admin") {
+        clearTimeout(timeoutId);
         const redirect = searchParams.get("redirect") || "/master";
-        window.location.href = redirect;
+        window.location.replace(redirect);
         return;
       }
 
@@ -84,8 +97,9 @@ function LoginForm() {
             throw new Error(err.error || "Failed to create workspace");
           }
 
+          clearTimeout(timeoutId);
           const redirect = searchParams.get("redirect") || "/dashboard";
-          window.location.href = redirect;
+          window.location.replace(redirect);
           return;
         } catch (err) {
           setError(err instanceof Error ? err.message : "Gagal membuat workspace");
@@ -100,11 +114,15 @@ function LoginForm() {
         ? `/dashboard/${accountParam}/inbox`
         : searchParams.get("redirect") || "/dashboard";
 
-      window.location.href = redirect;
+      clearTimeout(timeoutId);
+      console.log("[Login] Redirecting to:", redirect);
+      window.location.replace(redirect);
     } catch (err) {
+      clearTimeout(timeoutId);
       console.error("Login error:", err);
       setError(err instanceof Error ? err.message : "Terjadi kesalahan");
     } finally {
+      clearTimeout(timeoutId);
       submittingRef.current = false;
       setLoading(false);
     }
