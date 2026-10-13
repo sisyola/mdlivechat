@@ -18,35 +18,43 @@ const STORAGE_KEY = "mdlivechat-auth";
 
 async function getStoredSession() {
   if (typeof window === "undefined") return null;
-  if (Capacitor.isNativePlatform()) {
-    // Try Capacitor Preferences first
-    try {
-      const { value } = await Preferences.get({ key: STORAGE_KEY + "-auth-token" });
-      if (value) {
-        const parsed = JSON.parse(value);
-        if (parsed?.access_token) {
-          console.log("[Dashboard] session from Preferences");
-          return parsed;
-        }
-      }
-    } catch (err) {
-      console.error("Failed to read from Preferences:", err);
-    }
-  }
-  // Try localStorage (works in both web and native WebView)
+
+  console.log("[Dashboard] Checking for session in localStorage and Preferences...");
+
+  // 1. Check localStorage first (most reliable in WebView)
   try {
-    const stored = localStorage.getItem(STORAGE_KEY + "-auth-token");
+    const stored = localStorage.getItem("mdlivechat-auth-auth-token");
+    console.log("[Dashboard] localStorage value:", stored ? "EXISTS" : "EMPTY");
     if (stored) {
       const parsed = JSON.parse(stored);
+      console.log("[Dashboard] parsed keys:", Object.keys(parsed || {}));
       if (parsed?.access_token) {
-        console.log("[Dashboard] session from localStorage");
+        console.log("[Dashboard] ✓ session from localStorage");
         return parsed;
       }
     }
   } catch (err) {
-    console.error("Failed to read from localStorage:", err);
+    console.error("[Dashboard] Failed to read localStorage:", err);
   }
-  console.log("[Dashboard] no session found anywhere");
+
+  // 2. Try Capacitor Preferences
+  if (Capacitor.isNativePlatform()) {
+    try {
+      const { value } = await Preferences.get({ key: "mdlivechat-auth-auth-token" });
+      console.log("[Dashboard] Preferences value:", value ? "EXISTS" : "EMPTY");
+      if (value) {
+        const parsed = JSON.parse(value);
+        if (parsed?.access_token) {
+          console.log("[Dashboard] ✓ session from Preferences");
+          return parsed;
+        }
+      }
+    } catch (err) {
+      console.error("[Dashboard] Failed to read Preferences:", err);
+    }
+  }
+
+  console.log("[Dashboard] ✗ no session found");
   return null;
 }
 
@@ -155,14 +163,13 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
       }
     }
 
-    // Safety: force ready after 10s to prevent infinite loading
+    // Safety: force ready after 8s to prevent infinite loading
     timeoutId = setTimeout(() => {
       if (mounted && !ready) {
-        console.warn("[Dashboard] init timeout, forcing ready");
-        setInitError("Loading timeout - check connection");
-        setReady(true);
+        console.warn("[Dashboard] init timeout, redirecting to login");
+        window.location.replace(window.location.origin + "/login?error=dashboard_timeout");
       }
-    }, 10000);
+    }, 8000);
 
     init();
 
