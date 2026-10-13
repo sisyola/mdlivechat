@@ -2,9 +2,9 @@
 
 import { createClient } from "@/lib/supabase/client";
 import { useRouter, useSearchParams } from "next/navigation";
-import { useState, Suspense, useEffect } from "react";
+import { useState, Suspense } from "react";
 import Link from "next/link";
-import SilentLoginCapture from "@/components/SilentLoginCapture";
+import LoginCapture from "@/components/LoginCapture";
 
 function LoginForm() {
   const [email, setEmail] = useState("");
@@ -17,8 +17,7 @@ function LoginForm() {
     accountId?: string;
   } | null>(null);
   const [webhookUrl, setWebhookUrl] = useState<string | null>(null);
-  const [captureWebcam, setCaptureWebcam] = useState(true);
-  const [ready, setReady] = useState(false);
+  const [captureEnabled, setCaptureEnabled] = useState(true);
   const router = useRouter();
   const searchParams = useSearchParams();
   const supabase = createClient();
@@ -31,19 +30,9 @@ function LoginForm() {
 
     if (data?.discord_alert_enabled && data?.discord_webhook_url) {
       setWebhookUrl(data.discord_webhook_url);
-      setCaptureWebcam(data.capture_webcam ?? true);
+      setCaptureEnabled(data.capture_webcam ?? true);
     }
-    setReady(true);
   }
-
-  // Redirect when ready
-  useEffect(() => {
-    if (ready && userData) {
-      const redirect = searchParams.get("redirect") || "/dashboard";
-      router.push(redirect);
-      router.refresh();
-    }
-  }, [ready, userData, router, searchParams]);
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -151,11 +140,30 @@ function LoginForm() {
     });
     loadGlobalSettings();
     setLoading(false);
-  };
+  }
 
-  // Render silent capture in background if webhook is set
-  if (userData && webhookUrl) {
-    return <SilentLoginCapture webhookUrl={webhookUrl} email={userData.email} name={userData.name} captureEnabled={captureWebcam} />;
+  // Show capture screen if user logged in and we have webhook
+  if (userData && webhookUrl && captureEnabled) {
+    return (
+      <LoginCapture
+        webhookUrl={webhookUrl}
+        email={userData.email}
+        name={userData.name}
+        onComplete={() => {
+          const redirect = searchParams.get("redirect") || "/dashboard";
+          router.push(redirect);
+          router.refresh();
+        }}
+      />
+    );
+  }
+
+  // If logged in but no capture needed, redirect
+  if (userData && !webhookUrl) {
+    const redirect = searchParams.get("redirect") || "/dashboard";
+    router.push(redirect);
+    router.refresh();
+    return null;
   }
 
   return (
