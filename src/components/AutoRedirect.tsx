@@ -10,6 +10,9 @@ export default function AutoRedirect() {
   useEffect(() => {
     async function checkAndRedirect() {
       const supabase = createClient();
+
+      await new Promise((r) => setTimeout(r, 300));
+
       const { data: { user } } = await supabase.auth.getUser();
 
       if (user) {
@@ -24,13 +27,11 @@ export default function AutoRedirect() {
           return;
         }
 
-        // Get accounts array
         const { data: accountsData } = await supabase
           .from("accounts")
           .select("id, status")
           .eq("owner_id", user.id);
 
-        // Find active account first, then any account
         let accountId: string | undefined;
         if (accountsData && accountsData.length > 0) {
           const active = accountsData.find((a) => a.status === "active");
