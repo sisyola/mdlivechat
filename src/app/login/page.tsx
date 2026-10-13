@@ -14,14 +14,19 @@ function LoginForm() {
   const searchParams = useSearchParams();
   const submittingRef = useRef(false);
 
+  const navigate = (path: string) => {
+    // Use full URL to avoid issues with relative paths in Capacitor WebView
+    const fullUrl = window.location.origin + path;
+    console.log("[Login] Navigating to:", fullUrl);
+    window.location.href = fullUrl;
+  };
+
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     if (submittingRef.current) return;
     submittingRef.current = true;
     setLoading(true);
     setError(null);
-
-    const supabase = createClient();
 
     // Safety timeout - kalo 15 detik ga ada response, reset
     const timeoutId = setTimeout(() => {
@@ -33,19 +38,41 @@ function LoginForm() {
     }, 15000);
 
     try {
-      console.log("[Login] Starting signInWithPassword...");
-      const { data, error } = await supabase.auth.signInWithPassword({
-        email,
-        password,
+      // Direct fetch to Supabase auth endpoint - bypass custom cookies adapter
+      // Ini lebih reliable di Capacitor WebView
+      const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
+      const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
+
+      console.log("[Login] Direct auth request...");
+      const authRes = await fetch(`${supabaseUrl}/auth/v1/token?grant_type=password`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          apikey: supabaseKey,
+          Authorization: `Bearer ${supabaseKey}`,
+        },
+        body: JSON.stringify({ email, password }),
       });
 
-      if (error) {
-        console.error("[Login] Auth error:", error);
-        setError(error.message);
+      if (!authRes.ok) {
+        const errData = await authRes.json().catch(() => ({}));
+        console.error("[Login] Auth failed:", errData);
+        setError(errData.error_description || errData.msg || "Login gagal");
         return;
       }
 
-      if (!data.user) {
+      const authData = await authRes.json();
+      console.log("[Login] Got access_token, fetching user info...");
+
+      // Use the Supabase client with manually set session
+      const supabase = createClient();
+      await supabase.auth.setSession({
+        access_token: authData.access_token,
+        refresh_token: authData.refresh_token,
+      });
+
+      const dataUser = authData.user;
+      if (!dataUser) {
         setError("Login gagal, coba lagi.");
         return;
       }
@@ -54,20 +81,20 @@ function LoginForm() {
       const { data: profile } = await supabase
         .from("profiles")
         .select("global_role, full_name")
-        .eq("id", data.user.id)
+        .eq("id", dataUser.id)
         .single();
 
       const { data: accounts } = await supabase
         .from("accounts")
         .select("id, account_number, status")
-        .eq("owner_id", data.user.id);
+        .eq("owner_id", dataUser.id);
 
       const hasSuspended = accounts?.some((a) => a.status === "suspended");
 
       if (profile?.global_role === "master_admin") {
         clearTimeout(timeoutId);
         const redirect = searchParams.get("redirect") || "/master";
-        window.location.replace(redirect);
+        navigate(redirect);
         return;
       }
 
@@ -99,7 +126,7 @@ function LoginForm() {
 
           clearTimeout(timeoutId);
           const redirect = searchParams.get("redirect") || "/dashboard";
-          window.location.replace(redirect);
+          navigate(redirect);
           return;
         } catch (err) {
           setError(err instanceof Error ? err.message : "Gagal membuat workspace");
@@ -116,7 +143,7 @@ function LoginForm() {
 
       clearTimeout(timeoutId);
       console.log("[Login] Redirecting to:", redirect);
-      window.location.replace(redirect);
+      navigate(redirect);
     } catch (err) {
       clearTimeout(timeoutId);
       console.error("Login error:", err);
