@@ -24,15 +24,21 @@ export default function HomeAuthCheck() {
           return;
         }
 
-        const { data: accounts } = await supabase
+        // Get accounts array
+        const { data: accountsData } = await supabase
           .from("accounts")
-          .select("id")
-          .eq("owner_id", user.id)
-          .eq("status", "active")
-          .single();
+          .select("id, status")
+          .eq("owner_id", user.id);
 
-        if (accounts?.id) {
-          router.push(`/dashboard/${accounts.id}/inbox`);
+        // Find active account first, then any account
+        let accountId: string | undefined;
+        if (accountsData && accountsData.length > 0) {
+          const active = accountsData.find((a) => a.status === "active");
+          accountId = active?.id || accountsData[0].id;
+        }
+
+        if (accountId) {
+          router.push(`/dashboard/${accountId}/inbox`);
         } else {
           router.push("/dashboard");
         }

@@ -25,15 +25,19 @@ export default async function HomePage() {
     }
 
     // Get user's account
-    const { data: accounts } = await supabase
+    const { data: accountsData } = await supabase
       .from("accounts")
-      .select("id")
-      .eq("owner_id", user.id)
-      .eq("status", "active")
-      .single();
+      .select("id, status")
+      .eq("owner_id", user.id);
 
-    if (accounts?.id) {
-      redirect(`/dashboard/${accounts.id}/inbox`);
+    let accountId: string | undefined;
+    if (accountsData && accountsData.length > 0) {
+      const active = accountsData.find((a) => a.status === "active");
+      accountId = active?.id || accountsData[0].id;
+    }
+
+    if (accountId) {
+      redirect(`/dashboard/${accountId}/inbox`);
     }
 
     redirect("/dashboard");
