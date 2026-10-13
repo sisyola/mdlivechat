@@ -43,8 +43,10 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Upload failed", details: imgbbResult }, { status: 500 });
     }
 
-    const imageUrl = imgbbResult.data.url;
-    console.log("[Upload API] Success:", imageUrl);
+    // Use display_url for better compatibility
+    const imageUrl = imgbbResult.data.display_url || imgbbResult.data.url;
+    console.log("[Upload API] Success - URL:", imageUrl);
+    console.log("[Upload API] Display URL:", imgbbResult.data.display_url);
 
     return NextResponse.json({ url: imageUrl });
   } catch (err) {
