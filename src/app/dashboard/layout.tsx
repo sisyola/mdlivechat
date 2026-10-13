@@ -1,5 +1,8 @@
-import { createClient } from "@/lib/supabase/server";
-import { redirect } from "next/navigation";
+"use client";
+
+import { useEffect, useState } from "react";
+import { createClient, clearAuthStorage } from "@/lib/supabase/client";
+import { useRouter, usePathname } from "next/navigation";
 import LogoutButton from "@/components/LogoutButton";
 import DashboardSidebar from "@/components/DashboardSidebar";
 import MobileNav from "@/components/MobileNav";
@@ -7,44 +10,150 @@ import ActiveSessionTracker from "@/components/ActiveSessionTracker";
 import NotificationBell from "@/components/NotificationBell";
 import ProfileAvatar from "@/components/ProfileAvatar";
 import SoundSettingsButton from "@/components/SoundSettingsButton";
+import { Capacitor } from "@capacitor/core";
+import { Preferences } from "@capacitor/preferences";
 import type { Account } from "@/lib/types";
 
-// Force dynamic rendering - no caching
-export const dynamic = "force-dynamic";
-export const revalidate = 0;
+const STORAGE_KEY = "mdlivechat-auth";
 
-export default async function DashboardLayout({
-  children,
-}: {
-  children: React.ReactNode;
-}) {
-  const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+async function getStoredSession() {
+  if (typeof window === "undefined") return null;
+  if (Capacitor.isNativePlatform()) {
+    try {
+      const { value } = await Preferences.get({ key: STORAGE_KEY + "-auth-token" });
+      if (value) {
+        const parsed = JSON.parse(value);
+        if (parsed?.access_token) return parsed;
+      }
+    } catch {}
+  }
+  // Fallback: ask Supabase client (reads from web cookies if any)
+  try {
+    const supabase = createClient();
+    const { data } = await supabase.auth.getSession();
+    if (data.session?.access_token) {
+      return {
+        access_token: data.session.access_token,
+        refresh_token: data.session.refresh_token,
+        expires_at: data.session.expires_at,
+        expires_in: data.session.expires_in,
+        token_type: data.session.token_type,
+        user: data.session.user,
+      };
+    }
+  } catch {}
+  return null;
+}
 
-  if (!user) redirect("/login");
+export default function DashboardLayout({ children }: { children: React.ReactNode }) {
+  const router = useRouter();
+  const pathname = usePathname();
+  const [ready, setReady] = useState(false);
+  const [accounts, setAccounts] = useState<Account[]>([]);
+  const [activeAccount, setActiveAccount] = useState<Account | null>(null);
+  const [user, setUser] = useState<any>(null);
+  const [profile, setProfile] = useState<any>(null);
 
-  const { data: profile } = await supabase
-    .from("profiles")
-    .select("global_role, full_name, avatar_url")
-    .eq("id", user.id)
-    .single();
+  // Extract accountNumber from URL
+  const accountMatch = pathname?.match(/^\/dashboard\/([^\/]+)/);
+  const currentAccountNumber = accountMatch?.[1];
 
-  // Get user's accounts
-  const { data: accountsData } = await supabase
-    .from("accounts")
-    .select("*")
-    .eq("owner_id", user.id)
-    .order("created_at", { ascending: true });
+  useEffect(() => {
+    let mounted = true;
 
-  const accounts = (accountsData || []) as Account[];
-  const activeAccount =
-    accounts.find((a) => a.status === "active") || accounts[0] || null;
+    async function init() {
+      const session = await getStoredSession();
 
-  // If no active account, redirect to pending approval
-  if (!activeAccount || activeAccount.status !== "active") {
-    redirect("/pending-approval");
+      if (!mounted) return;
+
+      if (!session) {
+        // Not logged in
+        window.location.replace(window.location.origin + "/login");
+        return;
+      }
+
+      // Sync session to Supabase client + cookies
+      try {
+        const supabase = createClient();
+        await supabase.auth.setSession({
+          access_token: session.access_token,
+          refresh_token: session.refresh_token,
+        });
+
+        // Set auth cookie for any server-rendered needs
+        const projectRef = (process.env.NEXT_PUBLIC_SUPABASE_URL || "").match(/https:\/\/([^.]+)/)?.[1];
+        if (projectRef) {
+          const cookieValue = encodeURIComponent(JSON.stringify(session));
+          document.cookie = `sb-${projectRef}-auth-token=${cookieValue}; path=/; max-age=${session.expires_in || 3600}; SameSite=Lax`;
+        }
+
+        // Fetch user data
+        const { data: { user: u } } = await supabase.auth.getUser();
+        if (!u) {
+          window.location.replace(window.location.origin + "/login");
+          return;
+        }
+
+        const { data: prof } = await supabase
+          .from("profiles")
+          .select("global_role, full_name, avatar_url")
+          .eq("id", u.id)
+          .single();
+
+        const { data: accs } = await supabase
+          .from("accounts")
+          .select("*")
+          .eq("owner_id", u.id)
+          .order("created_at", { ascending: true });
+
+        const allAccounts = (accs || []) as Account[];
+
+        // Determine active account: by URL param > first active > first
+        let active: Account | null = null;
+        if (currentAccountNumber) {
+          active =
+            allAccounts.find((a) => a.account_number === currentAccountNumber) ||
+            allAccounts.find((a) => a.id === currentAccountNumber) ||
+            null;
+        }
+        if (!active) {
+          active = allAccounts.find((a) => a.status === "active") || allAccounts[0] || null;
+        }
+
+        if (!mounted) return;
+
+        if (!active) {
+          // No account - redirect to pending
+          window.location.replace(window.location.origin + "/pending-approval");
+          return;
+        }
+
+        setUser(u);
+        setProfile(prof);
+        setAccounts(allAccounts);
+        setActiveAccount(active);
+        setReady(true);
+      } catch (err) {
+        console.error("Dashboard init error:", err);
+        if (mounted) {
+          window.location.replace(window.location.origin + "/login");
+        }
+      }
+    }
+
+    init();
+
+    return () => {
+      mounted = false;
+    };
+  }, [currentAccountNumber]);
+
+  if (!ready || !activeAccount) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gray-50">
+        <div className="text-gray-600 text-sm">Loading...</div>
+      </div>
+    );
   }
 
   return (
@@ -62,15 +171,14 @@ export default async function DashboardLayout({
                 />
                 <div className="hidden md:flex items-center gap-2">
                   <ProfileAvatar
-                    userId={user.id}
+                    userId={user?.id}
                     avatarUrl={profile?.avatar_url}
-                    name={profile?.full_name || user.email || ""}
+                    name={profile?.full_name || user?.email || ""}
                   />
                   <div>
-                    <p className="text-sm text-gray-900">Logged in as</p>
-                    <p className="text-sm font-medium text-gray-900">
-                      {profile?.full_name || user.email}
-                    </p>
+                    <div className="text-sm font-medium text-gray-900">
+                      {profile?.full_name || user?.email}
+                    </div>
                   </div>
                 </div>
               </div>
@@ -82,9 +190,7 @@ export default async function DashboardLayout({
             </div>
           </div>
         </header>
-        <main className="flex-1 px-4 sm:px-6 lg:px-8 py-6 overflow-x-hidden">
-          {children}
-        </main>
+        <main className="flex-1 overflow-y-auto">{children}</main>
       </div>
     </div>
   );

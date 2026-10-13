@@ -92,9 +92,19 @@ export function createClient() {
 
 export async function clearAuthStorage() {
   try {
-    await nativeStorage.removeItem("auth-token");
-    await nativeStorage.removeItem("auth-token-code-verifier");
+    if (typeof window === "undefined") return;
+    if (Capacitor.isNativePlatform()) {
+      // Clear all auth-related Preferences keys
+      await Preferences.remove({ key: STORAGE_KEY + "-auth-token" });
+      await Preferences.remove({ key: STORAGE_KEY + "-auth-token-code-verifier" });
+      // Also clear any legacy keys without prefix
+      await Preferences.remove({ key: "auth-token" });
+      await Preferences.remove({ key: "auth-token-code-verifier" });
+    } else {
+      localStorage.removeItem("auth-token");
+      localStorage.removeItem("auth-token-code-verifier");
+    }
   } catch (err) {
-    console.error("Failed to clear auth storage", err);
+    console.error("Failed to clear auth storage:", err);
   }
 }
