@@ -3,43 +3,75 @@
 import { useEffect } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { useRouter } from "next/navigation";
+import { Capacitor } from "@capacitor/core";
 
 export default function AutoRedirect() {
   const router = useRouter();
 
   useEffect(() => {
+    let cancelled = false;
+
     async function checkAndRedirect() {
       const supabase = createClient();
+      const isNative = Capacitor.isNativePlatform();
 
-      // Wait for Capacitor WebView to fully hydrate native storage
-      await new Promise((r) => setTimeout(r, 500));
-
-      const { data: { session } } = await supabase.auth.getSession();
-
-      if (!session?.user) {
-        // Try getUser as fallback (refreshes from storage)
-        const { data: { user } } = await supabase.auth.getUser();
-        if (!user) return;
+      // Native WebView butuh waktu untuk hydrate storage
+      if (isNative) {
+        await new Promise((r) => setTimeout(r, 500));
       }
 
-      const user = session?.user;
-      if (!user) return;
+      if (cancelled) return;
+
+      // Listen for auth state changes (in case session is still hydrating)
+      const { data: { subscription } } = supabase.auth.onAuthStateChange(async (_event, session) => {
+        if (cancelled) return;
+        if (session?.user) {
+          await doRedirect(supabase, session.user.id);
+        }
+      });
+
+      // Try getSession first
+      const { data: { session } } = await supabase.auth.getSession();
+      if (cancelled) return;
+
+      if (session?.user) {
+        await doRedirect(supabase, session.user.id);
+      } else if (isNative) {
+        // Fallback: try getUser (refreshes from storage)
+        await new Promise((r) => setTimeout(r, 500));
+        if (cancelled) return;
+        const { data: { user } } = await supabase.auth.getUser();
+        if (cancelled) return;
+        if (user) {
+          await doRedirect(supabase, user.id);
+        }
+      }
+
+      return () => subscription.unsubscribe();
+    }
+
+    async function doRedirect(supabase: ReturnType<typeof createClient>, userId: string) {
+      if (cancelled) return;
 
       const { data: profile } = await supabase
         .from("profiles")
         .select("global_role")
-        .eq("id", user.id)
+        .eq("id", userId)
         .single();
 
+      if (cancelled) return;
+
       if (profile?.global_role === "master_admin") {
-        router.replace("/master");
+        window.location.href = "/master";
         return;
       }
 
       const { data: accountsData } = await supabase
         .from("accounts")
         .select("id, status")
-        .eq("owner_id", user.id);
+        .eq("owner_id", userId);
+
+      if (cancelled) return;
 
       let accountId: string | undefined;
       if (accountsData && accountsData.length > 0) {
@@ -48,13 +80,17 @@ export default function AutoRedirect() {
       }
 
       if (accountId) {
-        router.replace(`/dashboard/${accountId}/inbox`);
+        window.location.href = `/dashboard/${accountId}/inbox`;
       } else {
-        router.replace("/dashboard");
+        window.location.href = "/dashboard";
       }
     }
 
     checkAndRedirect();
+
+    return () => {
+      cancelled = true;
+    };
   }, [router]);
 
   return null;

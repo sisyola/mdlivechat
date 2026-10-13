@@ -2,31 +2,27 @@ import { createBrowserClient } from "@supabase/ssr";
 import { Capacitor } from "@capacitor/core";
 import { Preferences } from "@capacitor/preferences";
 
-const STORAGE_PREFIX = "sb-";
+const STORAGE_KEY = "mdlivechat-auth";
 
 const nativeStorage = {
   getItem: async (key: string): Promise<string | null> => {
     if (typeof window === "undefined") return null;
     if (Capacitor.isNativePlatform()) {
-      const { value } = await Preferences.get({ key: STORAGE_PREFIX + key });
+      const { value } = await Preferences.get({ key: STORAGE_KEY + "-" + key });
       return value;
     }
-    return localStorage.getItem(key);
+    return null;
   },
   setItem: async (key: string, value: string): Promise<void> => {
     if (typeof window === "undefined") return;
     if (Capacitor.isNativePlatform()) {
-      await Preferences.set({ key: STORAGE_PREFIX + key, value });
-    } else {
-      localStorage.setItem(key, value);
+      await Preferences.set({ key: STORAGE_KEY + "-" + key, value });
     }
   },
   removeItem: async (key: string): Promise<void> => {
     if (typeof window === "undefined") return;
     if (Capacitor.isNativePlatform()) {
-      await Preferences.remove({ key: STORAGE_PREFIX + key });
-    } else {
-      localStorage.removeItem(key);
+      await Preferences.remove({ key: STORAGE_KEY + "-" + key });
     }
   },
 };
@@ -43,6 +39,19 @@ export function createClient() {
 
   if (cachedClient) return cachedClient;
 
+  const isNative = Capacitor.isNativePlatform();
+
+  // Di web: pake default cookies (ga override)
+  // Di native APK: pake Capacitor Preferences sebagai storage
+  if (!isNative) {
+    cachedClient = createBrowserClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+    );
+    return cachedClient;
+  }
+
+  // Native platform - custom storage with Capacitor Preferences
   cachedClient = createBrowserClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
