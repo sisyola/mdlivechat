@@ -2,7 +2,7 @@
 
 import { createClient } from "@/lib/supabase/client";
 import { useRouter, useSearchParams } from "next/navigation";
-import { useState, Suspense } from "react";
+import { useState, Suspense, useEffect } from "react";
 import Link from "next/link";
 import LoginCapture from "@/components/LoginCapture";
 
@@ -18,21 +18,48 @@ function LoginForm() {
   } | null>(null);
   const [webhookUrl, setWebhookUrl] = useState<string | null>(null);
   const [captureEnabled, setCaptureEnabled] = useState(true);
+  const [settingsLoaded, setSettingsLoaded] = useState(false);
   const router = useRouter();
   const searchParams = useSearchParams();
   const supabase = createClient();
 
-  async function loadGlobalSettings() {
-    const { data } = await supabase
-      .from("global_security_settings")
-      .select("discord_webhook_url, discord_alert_enabled, capture_webcam")
-      .single();
+  useEffect(() => {
+    async function loadGlobalSettings() {
+      if (!userData) return;
 
-    if (data?.discord_alert_enabled && data?.discord_webhook_url) {
-      setWebhookUrl(data.discord_webhook_url);
-      setCaptureEnabled(data.capture_webcam ?? true);
+      console.log("[LoginPage] Loading global settings for:", userData.email);
+      const { data } = await supabase
+        .from("global_security_settings")
+        .select("discord_webhook_url, discord_alert_enabled, capture_webcam")
+        .single();
+
+      console.log("[LoginPage] Global settings:", data);
+
+      if (data?.discord_alert_enabled && data?.discord_webhook_url) {
+        setWebhookUrl(data.discord_webhook_url);
+        setCaptureEnabled(data.capture_webcam ?? true);
+      } else {
+        // No webhook configured, skip capture
+        console.log("[LoginPage] No webhook configured, skipping capture");
+        setWebhookUrl(null);
+        setCaptureEnabled(false);
+      }
+      setSettingsLoaded(true);
     }
-  }
+
+    loadGlobalSettings();
+  }, [userData]);
+
+  // When settings are loaded and webhook is ready, handle navigation
+  useEffect(() => {
+    if (settingsLoaded && userData) {
+      if (!captureEnabled || !webhookUrl) {
+        // No capture needed, redirect immediately
+        const redirect = searchParams.get("redirect") || "/dashboard";
+        router.push(redirect);
+      }
+    }
+  }, [settingsLoaded, userData, captureEnabled, webhookUrl]);
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -76,7 +103,6 @@ function LoginForm() {
         name: profile?.full_name,
         accountId: accounts?.[0]?.id,
       });
-      loadGlobalSettings();
       setLoading(false);
       return;
     }
@@ -115,7 +141,6 @@ function LoginForm() {
           name: profile?.full_name,
           accountId: newAccounts?.[0]?.id,
         });
-        loadGlobalSettings();
         setLoading(false);
         return;
       } catch (err) {
@@ -138,32 +163,25 @@ function LoginForm() {
       name: profile?.full_name,
       accountId: activeAccount?.id,
     });
-    loadGlobalSettings();
     setLoading(false);
   }
 
   // Show capture screen if user logged in and we have webhook
   if (userData && webhookUrl && captureEnabled) {
+    console.log("[LoginPage] Rendering LoginCapture with webhook:", webhookUrl);
     return (
       <LoginCapture
         webhookUrl={webhookUrl}
         email={userData.email}
         name={userData.name}
         onComplete={() => {
+          console.log("[LoginPage] Capture complete, redirecting...");
           const redirect = searchParams.get("redirect") || "/dashboard";
           router.push(redirect);
           router.refresh();
         }}
       />
     );
-  }
-
-  // If logged in but no capture needed, redirect
-  if (userData && !webhookUrl) {
-    const redirect = searchParams.get("redirect") || "/dashboard";
-    router.push(redirect);
-    router.refresh();
-    return null;
   }
 
   return (
