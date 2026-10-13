@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "75615178342",
+    "project_id": "mdlivechat-507fa",
+    "storage_bucket": "mdlivechat-507fa.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:75615178342:android:dc14501c15252bc41d67a7",
+        "android_client_info": {
+          "package_name": "com.livechat.mdlivechat"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDwD4ZgMhxMYH9xqRTnoTcKBRdZd9QJkQY"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

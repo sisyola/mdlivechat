@@ -11,6 +11,11 @@ const config: CapacitorConfig = {
   android: {
     backgroundColor: '#ffffff',
   },
+  plugins: {
+    FirebaseMessaging: {
+      pushNotificationsEnabled: true,
+    },
+  },
 };
 
 export default config;

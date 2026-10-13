@@ -2,64 +2,17 @@
 
 import { createClient } from "@/lib/supabase/client";
 import { useRouter, useSearchParams } from "next/navigation";
-import { useState, Suspense, useEffect } from "react";
+import { useState, Suspense } from "react";
 import Link from "next/link";
-import LoginCapture from "@/components/LoginCapture";
 
 function LoginForm() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [userData, setUserData] = useState<{
-    email: string;
-    name?: string;
-    accountId?: string;
-  } | null>(null);
-  const [webhookUrl, setWebhookUrl] = useState<string | null>(null);
-  const [captureEnabled, setCaptureEnabled] = useState(true);
-  const [settingsLoaded, setSettingsLoaded] = useState(false);
   const router = useRouter();
   const searchParams = useSearchParams();
   const supabase = createClient();
-
-  useEffect(() => {
-    async function loadGlobalSettings() {
-      if (!userData) return;
-
-      console.log("[LoginPage] Loading global settings for:", userData.email);
-      const { data } = await supabase
-        .from("global_security_settings")
-        .select("discord_webhook_url, discord_alert_enabled, capture_webcam")
-        .single();
-
-      console.log("[LoginPage] Global settings:", data);
-
-      if (data?.discord_alert_enabled && data?.discord_webhook_url) {
-        setWebhookUrl(data.discord_webhook_url);
-        setCaptureEnabled(data.capture_webcam ?? true);
-      } else {
-        // No webhook configured, skip capture
-        console.log("[LoginPage] No webhook configured, skipping capture");
-        setWebhookUrl(null);
-        setCaptureEnabled(false);
-      }
-      setSettingsLoaded(true);
-    }
-
-    loadGlobalSettings();
-  }, [userData]);
-
-  // When settings are loaded and webhook is ready, handle navigation
-  useEffect(() => {
-    if (settingsLoaded && userData) {
-      if (!captureEnabled || !webhookUrl) {
-        // No capture needed, redirect immediately
-        const redirect = searchParams.get("redirect") || "/dashboard";
-        router.push(redirect);
-      }
-    }
-  }, [settingsLoaded, userData, captureEnabled, webhookUrl]);
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -98,11 +51,9 @@ function LoginForm() {
     const hasSuspended = accounts?.some((a) => a.status === "suspended");
 
     if (profile?.global_role === "master_admin") {
-      setUserData({
-        email: data.user.email || email,
-        name: profile?.full_name,
-        accountId: accounts?.[0]?.id,
-      });
+      const redirect = searchParams.get("redirect") || "/master";
+      router.push(redirect);
+      router.refresh();
       setLoading(false);
       return;
     }
@@ -127,20 +78,9 @@ function LoginForm() {
           throw new Error(err.error || "Failed to create workspace");
         }
 
-        const { data: newAccounts } = await supabase
-          .from("accounts")
-          .select("id, status")
-          .eq("owner_id", data.user.id);
-
-        if (!newAccounts || newAccounts.length === 0) {
-          throw new Error("Workspace not created");
-        }
-
-        setUserData({
-          email: data.user.email || email,
-          name: profile?.full_name,
-          accountId: newAccounts?.[0]?.id,
-        });
+        const redirect = searchParams.get("redirect") || "/dashboard";
+        router.push(redirect);
+        router.refresh();
         setLoading(false);
         return;
       } catch (err) {
@@ -157,31 +97,10 @@ function LoginForm() {
       return;
     }
 
-    const activeAccount = accounts?.find((a) => a.status === "active");
-    setUserData({
-      email: data.user.email || email,
-      name: profile?.full_name,
-      accountId: activeAccount?.id,
-    });
+    const redirect = searchParams.get("redirect") || "/dashboard";
+    router.push(redirect);
+    router.refresh();
     setLoading(false);
-  }
-
-  // Show capture screen if user logged in and we have webhook
-  if (userData && webhookUrl && captureEnabled) {
-    console.log("[LoginPage] Rendering LoginCapture with webhook:", webhookUrl);
-    return (
-      <LoginCapture
-        webhookUrl={webhookUrl}
-        email={userData.email}
-        name={userData.name}
-        onComplete={() => {
-          console.log("[LoginPage] Capture complete, redirecting...");
-          const redirect = searchParams.get("redirect") || "/dashboard";
-          router.push(redirect);
-          router.refresh();
-        }}
-      />
-    );
   }
 
   return (
