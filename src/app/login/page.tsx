@@ -1,9 +1,11 @@
 "use client";
 
-import { createClient } from "@/lib/supabase/client";
+import { createClient, clearAuthStorage } from "@/lib/supabase/client";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useState, Suspense, useRef } from "react";
 import Link from "next/link";
+import { Capacitor } from "@capacitor/core";
+import { Preferences } from "@capacitor/preferences";
 
 function LoginForm() {
   const [email, setEmail] = useState("");
@@ -13,13 +15,7 @@ function LoginForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const submittingRef = useRef(false);
-
-  const navigate = (path: string) => {
-    // Use full URL to avoid issues with relative paths in Capacitor WebView
-    const fullUrl = window.location.origin + path;
-    console.log("[Login] Navigating to:", fullUrl);
-    window.location.href = fullUrl;
-  };
+  const isNative = typeof window !== "undefined" && Capacitor.isNativePlatform();
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -28,7 +24,7 @@ function LoginForm() {
     setLoading(true);
     setError(null);
 
-    // Safety timeout - kalo 15 detik ga ada response, reset
+    // Safety timeout
     const timeoutId = setTimeout(() => {
       if (submittingRef.current) {
         submittingRef.current = false;
@@ -38,8 +34,6 @@ function LoginForm() {
     }, 15000);
 
     try {
-      // Direct fetch to Supabase auth endpoint - bypass custom cookies adapter
-      // Ini lebih reliable di Capacitor WebView
       const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
       const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
 
@@ -57,96 +51,101 @@ function LoginForm() {
       if (!authRes.ok) {
         const errData = await authRes.json().catch(() => ({}));
         console.error("[Login] Auth failed:", errData);
-        setError(errData.error_description || errData.msg || "Login gagal");
+        setError(errData.error_description || errData.msg || "Login gagal. Cek email/password.");
         return;
       }
 
       const authData = await authRes.json();
-      console.log("[Login] Got access_token, fetching user info...");
+      console.log("[Login] Got tokens");
 
-      // Use the Supabase client with manually set session
-      const supabase = createClient();
-      await supabase.auth.setSession({
-        access_token: authData.access_token,
-        refresh_token: authData.refresh_token,
-      });
-
-      const dataUser = authData.user;
-      if (!dataUser) {
-        setError("Login gagal, coba lagi.");
-        return;
-      }
-
-      console.log("[Login] Success, fetching profile & accounts...");
-      const { data: profile } = await supabase
-        .from("profiles")
-        .select("global_role, full_name")
-        .eq("id", dataUser.id)
-        .single();
-
-      const { data: accounts } = await supabase
-        .from("accounts")
-        .select("id, account_number, status")
-        .eq("owner_id", dataUser.id);
-
-      const hasSuspended = accounts?.some((a) => a.status === "suspended");
-
-      if (profile?.global_role === "master_admin") {
-        clearTimeout(timeoutId);
-        const redirect = searchParams.get("redirect") || "/master";
-        navigate(redirect);
-        return;
-      }
-
-      if (hasSuspended) {
-        setError("Akun lu di-suspend. Hubungi support.");
-        await supabase.auth.signOut();
-        return;
-      }
-
-      if (!accounts || accounts.length === 0) {
+      // Persist session tokens directly to Capacitor Preferences on native
+      // This bypasses the custom cookies adapter entirely
+      if (isNative) {
         try {
-          const session = await supabase.auth.getSession();
-          const token = session.data.session?.access_token;
-
-          if (!token) throw new Error("No active session");
-
-          const res = await fetch("/api/workspace/create", {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-              Authorization: `Bearer ${token}`,
-            },
+          const sessionData = {
+            access_token: authData.access_token,
+            refresh_token: authData.refresh_token,
+            expires_at: authData.expires_at,
+            expires_in: authData.expires_in,
+            token_type: authData.token_type,
+            user: authData.user,
+          };
+          await Preferences.set({
+            key: "mdlivechat-auth-auth-token",
+            value: JSON.stringify(sessionData),
           });
-
-          if (!res.ok) {
-            const err = await res.json();
-            throw new Error(err.error || "Failed to create workspace");
-          }
-
-          clearTimeout(timeoutId);
-          const redirect = searchParams.get("redirect") || "/dashboard";
-          navigate(redirect);
-          return;
-        } catch (err) {
-          setError(err instanceof Error ? err.message : "Gagal membuat workspace");
-          return;
+          await Preferences.set({
+            key: "mdlivechat-auth-auth-token-code-verifier",
+            value: authData.refresh_token,
+          });
+          console.log("[Login] Saved session to Preferences");
+        } catch (prefErr) {
+          console.error("[Login] Failed to save to Preferences:", prefErr);
         }
       }
 
-      const active = accounts.find((a) => a.status === "active");
-      const acc = active || accounts[0];
-      const accountParam = acc?.account_number || acc?.id;
-      const redirect = accountParam
-        ? `/dashboard/${accountParam}/inbox`
-        : searchParams.get("redirect") || "/dashboard";
+      // Also set document.cookie so server-side pages can read session
+      // This is critical for Capacitor WebView where server components read cookies
+      try {
+        const projectRef = supabaseUrl.match(/https:\/\/([^.]+)/)?.[1];
+        if (projectRef) {
+          const cookieValue = `sb-${projectRef}-auth-token=${encodeURIComponent(JSON.stringify({
+            access_token: authData.access_token,
+            refresh_token: authData.refresh_token,
+            expires_at: authData.expires_at,
+            expires_in: authData.expires_in,
+            token_type: authData.token_type,
+            user: authData.user,
+          }))}`;
+          // Set cookie for current path
+          document.cookie = `${cookieValue}; path=/; max-age=${authData.expires_in || 3600}; SameSite=Lax`;
+          console.log("[Login] Set auth cookie for", projectRef);
+        }
+      } catch (cookieErr) {
+        console.error("[Login] Failed to set cookie:", cookieErr);
+      }
+
+      // Determine redirect URL based on user role & accounts
+      let redirectPath = "/dashboard";
+
+      try {
+        // Use a fresh Supabase client with the tokens
+        const supabase = createClient();
+        const { data: profile } = await supabase
+          .from("profiles")
+          .select("global_role")
+          .eq("id", authData.user.id)
+          .maybeSingle();
+
+        if (profile?.global_role === "master_admin") {
+          redirectPath = searchParams.get("redirect") || "/master";
+        } else {
+          const { data: accounts } = await supabase
+            .from("accounts")
+            .select("id, account_number, status")
+            .eq("owner_id", authData.user.id)
+            .limit(10);
+
+          const active = accounts?.find((a) => a.status === "active");
+          const acc = active || accounts?.[0];
+          if (acc) {
+            redirectPath = `/dashboard/${acc.account_number || acc.id}/inbox`;
+          }
+        }
+      } catch (ctxErr) {
+        console.error("[Login] Context fetch error (will continue):", ctxErr);
+        // Fall through with /dashboard
+      }
 
       clearTimeout(timeoutId);
-      console.log("[Login] Redirecting to:", redirect);
-      navigate(redirect);
+
+      // Use full URL to avoid WebView path resolution issues
+      const fullUrl = window.location.origin + redirectPath;
+      console.log("[Login] Navigating to:", fullUrl);
+      window.location.replace(fullUrl);
     } catch (err) {
       clearTimeout(timeoutId);
-      console.error("Login error:", err);
+      console.error("[Login] Error:", err);
       setError(err instanceof Error ? err.message : "Terjadi kesalahan");
     } finally {
       clearTimeout(timeoutId);
