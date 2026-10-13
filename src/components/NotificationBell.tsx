@@ -6,7 +6,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import NotificationPreferences from "./NotificationPreferences";
 import { useNotificationUnreadStore } from "@/lib/store/unread";
-import { playNewMessageSound } from "@/lib/sounds";
+import { playNewMessageSound, playNewChatSound } from "@/lib/sounds";
 
 interface Notification {
   id: string;
@@ -53,7 +53,12 @@ export default function NotificationBell({ accountId }: { accountId: string }) {
           const newNotif = payload.new as Notification;
           setNotifications((prev) => [newNotif, ...prev]);
           incrementUnread();
-          playNewMessageSound();
+          // Play different sounds for chat vs message
+          if (newNotif.type === "new_chat") {
+            playNewChatSound();
+          } else {
+            playNewMessageSound();
+          }
         }
       )
       .subscribe();

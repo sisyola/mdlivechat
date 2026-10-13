@@ -6,41 +6,42 @@ import HomeAuthCheck from "@/components/HomeAuthCheck";
 const APK_URL = "https://tfuowbybtslzseycfdju.supabase.co/storage/v1/object/public/apk/MDLIVECHAT.apk";
 
 export default async function HomePage() {
-  const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  try {
+    const supabase = await createClient();
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
 
-  // If logged in, redirect to dashboard
-  if (user) {
-    // Check if master admin
-    const { data: profile } = await supabase
-      .from("profiles")
-      .select("global_role")
-      .eq("id", user.id)
-      .single();
+    if (user) {
+      const { data: profile } = await supabase
+        .from("profiles")
+        .select("global_role")
+        .eq("id", user.id)
+        .single();
 
-    if (profile?.global_role === "master_admin") {
-      redirect("/master");
+      if (profile?.global_role === "master_admin") {
+        redirect("/master");
+      }
+
+      const { data: accountsData } = await supabase
+        .from("accounts")
+        .select("id, status")
+        .eq("owner_id", user.id);
+
+      let accountId: string | undefined;
+      if (accountsData && accountsData.length > 0) {
+        const active = accountsData.find((a) => a.status === "active");
+        accountId = active?.id || accountsData[0].id;
+      }
+
+      if (accountId) {
+        redirect(`/dashboard/${accountId}/inbox`);
+      }
+
+      redirect("/dashboard");
     }
-
-    // Get user's account
-    const { data: accountsData } = await supabase
-      .from("accounts")
-      .select("id, status")
-      .eq("owner_id", user.id);
-
-    let accountId: string | undefined;
-    if (accountsData && accountsData.length > 0) {
-      const active = accountsData.find((a) => a.status === "active");
-      accountId = active?.id || accountsData[0].id;
-    }
-
-    if (accountId) {
-      redirect(`/dashboard/${accountId}/inbox`);
-    }
-
-    redirect("/dashboard");
+  } catch (err) {
+    console.error("Home page auth check error:", err);
   }
 
   return (
@@ -67,29 +68,18 @@ export default async function HomePage() {
           <span className="font-bold text-gray-900 text-lg">LiveChat</span>
         </div>
         <div className="flex items-center gap-3">
-          {user ? (
-            <Link
-              href="/dashboard"
-              className="bg-brand-600 hover:bg-brand-700 text-white font-medium px-5 py-2 rounded-lg transition"
-            >
-              Dashboard
-            </Link>
-          ) : (
-            <>
-              <Link
-                href="/login"
-                className="text-gray-900 hover:text-gray-900 font-medium px-4 py-2"
-              >
-                Login
-              </Link>
-              <Link
-                href="/register"
-                className="bg-brand-600 hover:bg-brand-700 text-white font-medium px-5 py-2 rounded-lg transition"
-              >
-                Daftar Gratis
-              </Link>
-            </>
-          )}
+          <Link
+            href="/login"
+            className="text-gray-900 hover:text-gray-900 font-medium px-4 py-2"
+          >
+            Login
+          </Link>
+          <Link
+            href="/register"
+            className="bg-brand-600 hover:bg-brand-700 text-white font-medium px-5 py-2 rounded-lg transition"
+          >
+            Daftar Gratis
+          </Link>
         </div>
       </nav>
 
@@ -199,7 +189,7 @@ export default async function HomePage() {
             Download MDLIVECHAT.apk
           </a>
           <p className="text-green-200 text-sm mt-3">
-            Size: ~4MB | Android 5.0+
+            Size: ~8MB | Android 5.0+
           </p>
         </div>
 

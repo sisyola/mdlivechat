@@ -2,9 +2,8 @@
 
 import { createClient } from "@/lib/supabase/client";
 import { useRouter, useSearchParams } from "next/navigation";
-import { useState, Suspense } from "react";
+import { useState, Suspense, useRef } from "react";
 import Link from "next/link";
-import AutoRedirect from "@/components/AutoRedirect";
 
 function LoginForm() {
   const [email, setEmail] = useState("");
@@ -13,100 +12,104 @@ function LoginForm() {
   const [error, setError] = useState<string | null>(null);
   const router = useRouter();
   const searchParams = useSearchParams();
-  const supabase = createClient();
+  const submittingRef = useRef(false);
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (submittingRef.current) return;
+    submittingRef.current = true;
     setLoading(true);
     setError(null);
 
-    const { data, error } = await supabase.auth.signInWithPassword({
-      email,
-      password,
-    });
+    const supabase = createClient();
 
-    if (error) {
-      setError(error.message);
-      setLoading(false);
-      return;
-    }
+    try {
+      const { data, error } = await supabase.auth.signInWithPassword({
+        email,
+        password,
+      });
 
-    if (!data.user) {
-      setError("Login gagal, coba lagi.");
-      setLoading(false);
-      return;
-    }
-
-    const { data: profile } = await supabase
-      .from("profiles")
-      .select("global_role, full_name")
-      .eq("id", data.user.id)
-      .single();
-
-    const { data: accounts } = await supabase
-      .from("accounts")
-      .select("id, status")
-      .eq("owner_id", data.user.id);
-
-    const hasActive = accounts?.some((a) => a.status === "active");
-    const hasSuspended = accounts?.some((a) => a.status === "suspended");
-
-    if (profile?.global_role === "master_admin") {
-      const redirect = searchParams.get("redirect") || "/master";
-      router.push(redirect);
-      router.refresh();
-      setLoading(false);
-      return;
-    }
-
-    if (!accounts || accounts.length === 0) {
-      try {
-        const session = await supabase.auth.getSession();
-        const token = session.data.session?.access_token;
-
-        if (!token) throw new Error("No active session");
-
-        const res = await fetch("/api/workspace/create", {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${token}`,
-          },
-        });
-
-        if (!res.ok) {
-          const err = await res.json();
-          throw new Error(err.error || "Failed to create workspace");
-        }
-
-        const redirect = searchParams.get("redirect") || "/dashboard";
-        router.push(redirect);
-        router.refresh();
-        setLoading(false);
-        return;
-      } catch (err) {
-        setError(err instanceof Error ? err.message : "Gagal membuat workspace");
-        setLoading(false);
+      if (error) {
+        setError(error.message);
         return;
       }
-    }
 
-    if (hasSuspended) {
-      setError("Akun lu di-suspend. Hubungi support.");
+      if (!data.user) {
+        setError("Login gagal, coba lagi.");
+        return;
+      }
+
+      const { data: profile } = await supabase
+        .from("profiles")
+        .select("global_role, full_name")
+        .eq("id", data.user.id)
+        .single();
+
+      const { data: accounts } = await supabase
+        .from("accounts")
+        .select("id, status")
+        .eq("owner_id", data.user.id);
+
+      const hasSuspended = accounts?.some((a) => a.status === "suspended");
+
+      if (profile?.global_role === "master_admin") {
+        const redirect = searchParams.get("redirect") || "/master";
+        window.location.href = redirect;
+        return;
+      }
+
+      if (hasSuspended) {
+        setError("Akun lu di-suspend. Hubungi support.");
+        await supabase.auth.signOut();
+        return;
+      }
+
+      if (!accounts || accounts.length === 0) {
+        try {
+          const session = await supabase.auth.getSession();
+          const token = session.data.session?.access_token;
+
+          if (!token) throw new Error("No active session");
+
+          const res = await fetch("/api/workspace/create", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              Authorization: `Bearer ${token}`,
+            },
+          });
+
+          if (!res.ok) {
+            const err = await res.json();
+            throw new Error(err.error || "Failed to create workspace");
+          }
+
+          const redirect = searchParams.get("redirect") || "/dashboard";
+          window.location.href = redirect;
+          return;
+        } catch (err) {
+          setError(err instanceof Error ? err.message : "Gagal membuat workspace");
+          return;
+        }
+      }
+
+      const active = accounts.find((a) => a.status === "active");
+      const accountId = active?.id || accounts[0]?.id;
+      const redirect = accountId
+        ? `/dashboard/${accountId}/inbox`
+        : searchParams.get("redirect") || "/dashboard";
+
+      window.location.href = redirect;
+    } catch (err) {
+      console.error("Login error:", err);
+      setError(err instanceof Error ? err.message : "Terjadi kesalahan");
+    } finally {
+      submittingRef.current = false;
       setLoading(false);
-      await supabase.auth.signOut();
-      return;
     }
-
-    const redirect = searchParams.get("redirect") || "/dashboard";
-    router.push(redirect);
-    router.refresh();
-    setLoading(false);
-  }
+  };
 
   return (
-    <>
-      <AutoRedirect />
     <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-blue-50 to-indigo-100 px-4">
       <div className="max-w-md w-full bg-white rounded-2xl shadow-xl p-8">
         <div className="text-center mb-8">
@@ -169,7 +172,6 @@ function LoginForm() {
         </p>
       </div>
     </div>
-    </>
   );
 }
 

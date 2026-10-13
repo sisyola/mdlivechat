@@ -8,9 +8,9 @@ export interface SoundPreferences {
 }
 
 const DEFAULT_PREFS: SoundPreferences = {
-  chatSound: "chime",
+  chatSound: "bell",
   messageSound: "double",
-  volume: 70,
+  volume: 100,
   enabled: true,
 };
 
@@ -30,18 +30,20 @@ const SOUND_PATTERNS: Record<string, number[]> = {
   chime: [523, 659, 784, 1047],
   ding: [440, 0, 330],
   pop: [800, 400],
-  bell: [880, 1100, 880],
+  bell: [880, 1100, 880, 1100, 880],
   ascending: [440, 554, 659, 784],
   double: [880, 0, 880],
+  loud: [523, 0, 659, 0, 784, 0, 1047],
 };
 
 const SOUND_DURATIONS: Record<string, number> = {
-  chime: 0.6,
+  chime: 0.8,
   ding: 0.5,
   pop: 0.2,
-  bell: 0.4,
-  ascending: 0.5,
-  double: 0.3,
+  bell: 1.0,
+  ascending: 0.6,
+  double: 0.4,
+  loud: 1.5,
 };
 
 function playSound(patternId: string, volume: number) {
@@ -67,7 +69,7 @@ function playSound(patternId: string, volume: number) {
 
     const frequencies = SOUND_PATTERNS[patternId] || SOUND_PATTERNS.double;
     const duration = SOUND_DURATIONS[patternId] || 0.3;
-    const vol = (volume / 100) * 0.5;
+    const vol = volume / 100;
 
     gain.gain.setValueAtTime(vol, ctx.currentTime);
     gain.gain.linearRampToValueAtTime(0, ctx.currentTime + duration);
