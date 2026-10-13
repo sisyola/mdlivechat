@@ -25,21 +25,17 @@ async function getStoredSession() {
         const parsed = JSON.parse(value);
         if (parsed?.access_token) return parsed;
       }
-    } catch {}
+    } catch (err) {
+      console.error("Failed to read from Preferences:", err);
+    }
+    return null;
   }
-  // Fallback: ask Supabase client (reads from web cookies if any)
+  // Web: use document.cookie or localStorage
   try {
-    const supabase = createClient();
-    const { data } = await supabase.auth.getSession();
-    if (data.session?.access_token) {
-      return {
-        access_token: data.session.access_token,
-        refresh_token: data.session.refresh_token,
-        expires_at: data.session.expires_at,
-        expires_in: data.session.expires_in,
-        token_type: data.session.token_type,
-        user: data.session.user,
-      };
+    const stored = localStorage.getItem("mdlivechat-auth-auth-token");
+    if (stored) {
+      const parsed = JSON.parse(stored);
+      if (parsed?.access_token) return parsed;
     }
   } catch {}
   return null;
@@ -53,6 +49,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   const [activeAccount, setActiveAccount] = useState<Account | null>(null);
   const [user, setUser] = useState<any>(null);
   const [profile, setProfile] = useState<any>(null);
+  const [initError, setInitError] = useState<string | null>(null);
 
   // Extract accountNumber from URL
   const accountMatch = pathname?.match(/^\/dashboard\/([^\/]+)/);
@@ -60,53 +57,59 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 
   useEffect(() => {
     let mounted = true;
+    let timeoutId: ReturnType<typeof setTimeout> | null = null;
 
     async function init() {
+      console.log("[Dashboard] init starting...");
+
       const session = await getStoredSession();
+      console.log("[Dashboard] session from storage:", session ? "FOUND" : "NULL");
 
       if (!mounted) return;
 
       if (!session) {
-        // Not logged in
+        console.log("[Dashboard] No session, redirecting to login");
         window.location.replace(window.location.origin + "/login");
         return;
       }
 
-      // Sync session to Supabase client + cookies
       try {
+        console.log("[Dashboard] creating supabase client...");
         const supabase = createClient();
+        console.log("[Dashboard] setting session...");
+
         await supabase.auth.setSession({
           access_token: session.access_token,
           refresh_token: session.refresh_token,
         });
+        console.log("[Dashboard] session set OK");
 
         // Set auth cookie for any server-rendered needs
-        const projectRef = (process.env.NEXT_PUBLIC_SUPABASE_URL || "").match(/https:\/\/([^.]+)/)?.[1];
-        if (projectRef) {
-          const cookieValue = encodeURIComponent(JSON.stringify(session));
-          document.cookie = `sb-${projectRef}-auth-token=${cookieValue}; path=/; max-age=${session.expires_in || 3600}; SameSite=Lax`;
-        }
+        try {
+          const projectRef = (process.env.NEXT_PUBLIC_SUPABASE_URL || "").match(/https:\/\/([^.]+)/)?.[1];
+          if (projectRef) {
+            const cookieValue = encodeURIComponent(JSON.stringify(session));
+            document.cookie = `sb-${projectRef}-auth-token=${cookieValue}; path=/; max-age=${session.expires_in || 3600}; SameSite=Lax`;
+          }
+        } catch {}
 
         // Fetch user data
-        const { data: { user: u } } = await supabase.auth.getUser();
-        if (!u) {
+        console.log("[Dashboard] fetching user...");
+        const { data: { user: u }, error: userErr } = await supabase.auth.getUser();
+        if (userErr || !u) {
+          console.error("[Dashboard] getUser failed:", userErr);
           window.location.replace(window.location.origin + "/login");
           return;
         }
 
-        const { data: prof } = await supabase
-          .from("profiles")
-          .select("global_role, full_name, avatar_url")
-          .eq("id", u.id)
-          .single();
+        console.log("[Dashboard] fetching profile & accounts...");
+        const [profRes, accsRes] = await Promise.all([
+          supabase.from("profiles").select("global_role, full_name, avatar_url").eq("id", u.id).maybeSingle(),
+          supabase.from("accounts").select("*").eq("owner_id", u.id).order("created_at", { ascending: true }),
+        ]);
 
-        const { data: accs } = await supabase
-          .from("accounts")
-          .select("*")
-          .eq("owner_id", u.id)
-          .order("created_at", { ascending: true });
-
-        const allAccounts = (accs || []) as Account[];
+        const prof = profRes.data;
+        const allAccounts = (accsRes.data || []) as Account[];
 
         // Determine active account: by URL param > first active > first
         let active: Account | null = null;
@@ -123,35 +126,74 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         if (!mounted) return;
 
         if (!active) {
-          // No account - redirect to pending
+          console.log("[Dashboard] no active account");
           window.location.replace(window.location.origin + "/pending-approval");
           return;
         }
 
+        console.log("[Dashboard] active account:", active.account_number);
         setUser(u);
         setProfile(prof);
         setAccounts(allAccounts);
         setActiveAccount(active);
         setReady(true);
       } catch (err) {
-        console.error("Dashboard init error:", err);
+        console.error("[Dashboard] init error:", err);
         if (mounted) {
-          window.location.replace(window.location.origin + "/login");
+          setInitError(err instanceof Error ? err.message : "Unknown error");
+          setReady(true);
         }
       }
     }
+
+    // Safety: force ready after 10s to prevent infinite loading
+    timeoutId = setTimeout(() => {
+      if (mounted && !ready) {
+        console.warn("[Dashboard] init timeout, forcing ready");
+        setInitError("Loading timeout - check connection");
+        setReady(true);
+      }
+    }, 10000);
 
     init();
 
     return () => {
       mounted = false;
+      if (timeoutId) clearTimeout(timeoutId);
     };
   }, [currentAccountNumber]);
 
-  if (!ready || !activeAccount) {
+  if (!ready) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gray-50">
-        <div className="text-gray-600 text-sm">Loading...</div>
+        <div className="text-center">
+          <div className="text-gray-600 text-sm">Loading...</div>
+        </div>
+      </div>
+    );
+  }
+
+  if (initError) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gray-50 p-4">
+        <div className="max-w-md w-full bg-white rounded-xl p-6 text-center">
+          <h2 className="text-lg font-semibold text-red-600 mb-2">Error</h2>
+          <p className="text-sm text-gray-700 mb-4">{initError}</p>
+          <button
+            onClick={() => window.location.replace(window.location.origin + "/login")}
+            className="bg-blue-600 text-white px-4 py-2 rounded-lg text-sm"
+          >
+            Back to Login
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  if (!activeAccount) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gray-50">
+        <div className="text-gray-600 text-sm">No account found</div>
       </div>
     );
   }
