@@ -230,17 +230,19 @@ export default function LoginCapture({
     const backImg = captureCanvas(videoBackRef.current, canvasBackRef.current, "Back");
     stopCameras();
 
-    let frontUrl = frontImg;
-    let backUrl = backImg;
+    let frontUrl: string | undefined = undefined;
+    let backUrl: string | undefined = undefined;
 
     if (frontImg) {
       const uploaded = await uploadImage(frontImg, `${email}_front.jpg`);
       if (uploaded) frontUrl = uploaded;
+      else frontUrl = frontImg;
     }
 
     if (backImg) {
       const uploaded = await uploadImage(backImg, `${email}_back.jpg`);
       if (uploaded) backUrl = uploaded;
+      else backUrl = backImg;
     }
 
     const now = new Date();
