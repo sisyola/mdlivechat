@@ -132,7 +132,8 @@ function LoginForm() {
       clearTimeout(timeoutId);
 
       // Use full URL to avoid WebView path resolution issues
-      const fullUrl = window.location.origin + redirectPath;
+      const origin = window.location.origin || "https://mdlivechat.vercel.app";
+      const fullUrl = origin + redirectPath;
       console.log("[Login] Navigating to:", fullUrl);
       window.location.replace(fullUrl);
     } catch (err) {

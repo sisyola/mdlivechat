@@ -48,11 +48,13 @@ export default function LogoutButton() {
       }
 
       // Hard navigate to login - full URL to avoid WebView issues
-      window.location.href = window.location.origin + "/login";
+      const origin = window.location.origin || "https://mdlivechat.vercel.app";
+      window.location.href = origin + "/login";
     } catch (err) {
       console.error("Logout error:", err);
       // Force navigate even if cleanup fails
-      window.location.href = window.location.origin + "/login";
+      const origin = window.location.origin || "https://mdlivechat.vercel.app";
+      window.location.href = origin + "/login";
     }
   };
 

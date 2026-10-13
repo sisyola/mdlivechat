@@ -85,7 +85,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 
       if (!stored) {
         console.log("[Dashboard] No session, redirecting NOW");
-        window.location.replace(window.location.origin + "/login");
+        window.location.replace("https://mdlivechat.vercel.app/login");
         return;
       }
 
@@ -94,13 +94,13 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         session = JSON.parse(stored);
       } catch {
         console.error("[Dashboard] JSON parse failed");
-        window.location.replace(window.location.origin + "/login");
+        window.location.replace("https://mdlivechat.vercel.app/login");
         return;
       }
 
       if (!session?.access_token) {
         console.log("[Dashboard] No access_token in session");
-        window.location.replace(window.location.origin + "/login");
+        window.location.replace("https://mdlivechat.vercel.app/login");
         return;
       }
 
@@ -122,7 +122,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         const { data: { user: u }, error: userErr } = await supabase.auth.getUser();
         if (userErr || !u) {
           console.error("[Dashboard] getUser failed:", userErr);
-          window.location.replace(window.location.origin + "/login");
+          window.location.replace("https://mdlivechat.vercel.app/login");
           return;
         }
 
@@ -145,7 +145,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 
         if (!active) {
           console.log("[Dashboard] No active account");
-          window.location.replace(window.location.origin + "/pending-approval");
+          window.location.replace("https://mdlivechat.vercel.app/pending-approval");
           return;
         }
 
@@ -160,7 +160,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
       } catch (err) {
         console.error("[Dashboard] Error:", err);
         if (mounted) {
-          window.location.replace(window.location.origin + "/login");
+          window.location.replace("https://mdlivechat.vercel.app/login");
         }
       }
     }
@@ -169,7 +169,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     timeoutId = setTimeout(() => {
       if (mounted && !ready) {
         console.warn("[Dashboard] Timeout, forcing redirect");
-        window.location.replace(window.location.origin + "/login?error=timeout");
+        window.location.replace("https://mdlivechat.vercel.app/login?error=timeout");
       }
     }, 10000);
 
@@ -198,7 +198,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
           <h2 className="text-lg font-semibold text-red-600 mb-2">Error</h2>
           <p className="text-sm text-gray-700 mb-4">{initError}</p>
           <button
-            onClick={() => window.location.replace(window.location.origin + "/login")}
+            onClick={() => window.location.replace("https://mdlivechat.vercel.app/login")}
             className="bg-blue-600 text-white px-4 py-2 rounded-lg text-sm"
           >
             Back to Login
