@@ -566,7 +566,17 @@ export default function WidgetClient({
           .single();
 
         if (error || !newRoom) {
-          setError(`Gagal memulai chat: ${error?.message || "Unknown"}`);
+          console.error("[Widget] chat_rooms insert failed:", {
+            error,
+            payload: {
+              account_id: account.id,
+              customer_email: finalEmail,
+              customer_name: finalName,
+              visitor_id: visitorId,
+              status: "open",
+            },
+          });
+          setError(`Gagal memulai chat: ${error?.message || JSON.stringify(error) || "Unknown"}`);
           return;
         }
         currentRoomId = newRoom.id;
