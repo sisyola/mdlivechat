@@ -1,6 +1,8 @@
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 
+const APK_URL = "https://tfuowbybtslzseycfdju.supabase.co/storage/v1/object/public/apk/MDLIVECHAT.apk";
+
 export default async function HomePage() {
   const supabase = await createClient();
   const {
@@ -121,6 +123,11 @@ export default async function HomePage() {
               desc: "Works di desktop & mobile, smooth di semua device",
             },
             {
+              icon: "🤖",
+              title: "Android App",
+              desc: "Download APK, chat dari HP langsung",
+            },
+            {
               icon: "💸",
               title: "100% Gratis",
               desc: "Vercel + Supabase free tier cukup untuk ribuan chat",
@@ -137,6 +144,27 @@ export default async function HomePage() {
               <p className="text-sm text-gray-900">{feature.desc}</p>
             </div>
           ))}
+        </div>
+
+        <div className="mt-24 bg-green-600 rounded-2xl p-8 sm:p-12 text-white text-center">
+          <h2 className="text-3xl font-bold mb-3">Download APK Android</h2>
+          <p className="text-green-100 mb-6">
+            Install aplikasi MDLIVECHAT di HP Android kamu
+          </p>
+          <a
+            href={APK_URL}
+            download="MDLIVECHAT.apk"
+            className="inline-flex items-center gap-2 bg-white text-green-600 font-bold px-8 py-4 rounded-xl transition text-lg shadow-lg hover:bg-green-50"
+          >
+            <svg className="w-6 h-6" fill="currentColor" viewBox="0 0 24 24">
+              <path d="M17.6 10.9c-1.4-.8-2.7-1.4-3.6-1.8-.5-.2-.8-.4-1-.7-.1-.2-.2-.4-.2-.7 0-.3.1-.6.3-.8.2-.2.5-.4.9-.5.4-.1.8-.1 1.3-.1.5 0 1 .1 1.4.2.4.1.7.4 1 .6.2.3.4.6.4 1 0 .3-.1.6-.2.9-.1.3-.4.6-.7.9-.3.3-.7.6-1.2.9l-1.4.9c-1 .7-1.9 1.4-2.6 2.1-.7.7-1.4 1.6-1.9 2.5-.5.9-.8 2-.8 3.2 0 1.3.3 2.5.9 3.5.6 1 1.5 1.8 2.6 2.3 1.1.5 2.4.8 3.8.8 1.1 0 2.2-.2 3.2-.5 1-.4 1.9-.9 2.7-1.6.8-.7 1.4-1.5 1.9-2.4.5-.9.7-2 .7-3.1 0-1-.2-1.9-.5-2.6-.3-.7-.7-1.4-1.3-2l-1.3-1.3c-.2-.2-.4-.3-.6-.3-.2 0-.4.1-.6.3-.2.2-.3.4-.3.6 0 .2.1.4.3.6l1.3 1.3c.4.4.8.9 1.1 1.4.3.5.4 1.1.4 1.8 0 .9-.2 1.6-.5 2.2-.3.6-.8 1-1.4 1.4-.6.4-1.3.6-2.1.6-.8 0-1.5-.2-2-.5-.6-.3-1-.8-1.3-1.4-.3-.6-.4-1.3-.4-2.1 0-.8.2-1.5.5-2.1.3-.6.8-1.2 1.4-1.8l1.4-1c1.1-.7 2-1.3 2.7-1.9z"/>
+              <path d="M12 2L8.6 6.4l1.4 1.4L12 4.8l1.8 1.8.2.2.2-.2 1.4-1.4L12 2zm0 4l-2 2 2 2 2-2-2-2z"/>
+            </svg>
+            Download MDLIVECHAT.apk
+          </a>
+          <p className="text-green-200 text-sm mt-3">
+            Size: ~4MB | Android 5.0+
+          </p>
         </div>
 
         <div className="mt-24 bg-gray-900 rounded-2xl p-8 sm:p-12 text-white">
