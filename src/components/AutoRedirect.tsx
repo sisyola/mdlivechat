@@ -11,38 +11,46 @@ export default function AutoRedirect() {
     async function checkAndRedirect() {
       const supabase = createClient();
 
-      await new Promise((r) => setTimeout(r, 300));
+      // Wait for Capacitor WebView to fully hydrate native storage
+      await new Promise((r) => setTimeout(r, 500));
 
-      const { data: { user } } = await supabase.auth.getUser();
+      const { data: { session } } = await supabase.auth.getSession();
 
-      if (user) {
-        const { data: profile } = await supabase
-          .from("profiles")
-          .select("global_role")
-          .eq("id", user.id)
-          .single();
+      if (!session?.user) {
+        // Try getUser as fallback (refreshes from storage)
+        const { data: { user } } = await supabase.auth.getUser();
+        if (!user) return;
+      }
 
-        if (profile?.global_role === "master_admin") {
-          router.push("/master");
-          return;
-        }
+      const user = session?.user;
+      if (!user) return;
 
-        const { data: accountsData } = await supabase
-          .from("accounts")
-          .select("id, status")
-          .eq("owner_id", user.id);
+      const { data: profile } = await supabase
+        .from("profiles")
+        .select("global_role")
+        .eq("id", user.id)
+        .single();
 
-        let accountId: string | undefined;
-        if (accountsData && accountsData.length > 0) {
-          const active = accountsData.find((a) => a.status === "active");
-          accountId = active?.id || accountsData[0].id;
-        }
+      if (profile?.global_role === "master_admin") {
+        router.replace("/master");
+        return;
+      }
 
-        if (accountId) {
-          router.push(`/dashboard/${accountId}/inbox`);
-        } else {
-          router.push("/dashboard");
-        }
+      const { data: accountsData } = await supabase
+        .from("accounts")
+        .select("id, status")
+        .eq("owner_id", user.id);
+
+      let accountId: string | undefined;
+      if (accountsData && accountsData.length > 0) {
+        const active = accountsData.find((a) => a.status === "active");
+        accountId = active?.id || accountsData[0].id;
+      }
+
+      if (accountId) {
+        router.replace(`/dashboard/${accountId}/inbox`);
+      } else {
+        router.replace("/dashboard");
       }
     }
 

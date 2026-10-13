@@ -11,39 +11,40 @@ export default function HomeAuthCheck() {
     async function checkAuth() {
       const supabase = createClient();
 
-      // Wait a bit for session to restore
-      await new Promise((r) => setTimeout(r, 300));
+      // Wait for Capacitor WebView to hydrate native storage
+      await new Promise((r) => setTimeout(r, 500));
 
-      const { data: { user } } = await supabase.auth.getUser();
+      const { data: { session } } = await supabase.auth.getSession();
+      const user = session?.user;
 
-      if (user) {
-        const { data: profile } = await supabase
-          .from("profiles")
-          .select("global_role")
-          .eq("id", user.id)
-          .single();
+      if (!user) return;
 
-        if (profile?.global_role === "master_admin") {
-          router.push("/master");
-          return;
-        }
+      const { data: profile } = await supabase
+        .from("profiles")
+        .select("global_role")
+        .eq("id", user.id)
+        .single();
 
-        const { data: accountsData } = await supabase
-          .from("accounts")
-          .select("id, status")
-          .eq("owner_id", user.id);
+      if (profile?.global_role === "master_admin") {
+        router.replace("/master");
+        return;
+      }
 
-        let accountId: string | undefined;
-        if (accountsData && accountsData.length > 0) {
-          const active = accountsData.find((a) => a.status === "active");
-          accountId = active?.id || accountsData[0].id;
-        }
+      const { data: accountsData } = await supabase
+        .from("accounts")
+        .select("id, status")
+        .eq("owner_id", user.id);
 
-        if (accountId) {
-          router.push(`/dashboard/${accountId}/inbox`);
-        } else {
-          router.push("/dashboard");
-        }
+      let accountId: string | undefined;
+      if (accountsData && accountsData.length > 0) {
+        const active = accountsData.find((a) => a.status === "active");
+        accountId = active?.id || accountsData[0].id;
+      }
+
+      if (accountId) {
+        router.replace(`/dashboard/${accountId}/inbox`);
+      } else {
+        router.replace("/dashboard");
       }
     }
 
