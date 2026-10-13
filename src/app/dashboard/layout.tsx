@@ -79,39 +79,46 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     async function init() {
       console.log("[Dashboard] init starting...");
 
-      const session = await getStoredSession();
-      console.log("[Dashboard] session from storage:", session ? "FOUND" : "NULL");
+      // NO session? redirect immediately - no async needed
+      const stored = localStorage.getItem("mdlivechat-auth-auth-token");
+      console.log("[Dashboard] localStorage:", stored ? "EXISTS" : "EMPTY");
 
-      if (!mounted) return;
-
-      if (!session) {
-        console.log("[Dashboard] No session, redirecting to login");
+      if (!stored) {
+        console.log("[Dashboard] No session, redirecting NOW");
         window.location.replace(window.location.origin + "/login");
         return;
       }
 
+      let session;
       try {
-        console.log("[Dashboard] creating supabase client...");
-        const supabase = createClient();
-        console.log("[Dashboard] setting session...");
+        session = JSON.parse(stored);
+      } catch {
+        console.error("[Dashboard] JSON parse failed");
+        window.location.replace(window.location.origin + "/login");
+        return;
+      }
 
+      if (!session?.access_token) {
+        console.log("[Dashboard] No access_token in session");
+        window.location.replace(window.location.origin + "/login");
+        return;
+      }
+
+      console.log("[Dashboard] ✓ Have session, syncing...");
+
+      try {
+        const supabase = createClient();
         await supabase.auth.setSession({
           access_token: session.access_token,
-          refresh_token: session.refresh_token,
+          refresh_token: session.refresh_token || "",
         });
-        console.log("[Dashboard] session set OK");
 
-        // Set auth cookie for any server-rendered needs
-        try {
-          const projectRef = (process.env.NEXT_PUBLIC_SUPABASE_URL || "").match(/https:\/\/([^.]+)/)?.[1];
-          if (projectRef) {
-            const cookieValue = encodeURIComponent(JSON.stringify(session));
-            document.cookie = `sb-${projectRef}-auth-token=${cookieValue}; path=/; max-age=${session.expires_in || 3600}; SameSite=Lax`;
-          }
-        } catch {}
+        // Set cookie for server
+        const projectRef = (process.env.NEXT_PUBLIC_SUPABASE_URL || "").match(/https:\/\/([^.]+)/)?.[1];
+        if (projectRef) {
+          document.cookie = `sb-${projectRef}-auth-token=${encodeURIComponent(JSON.stringify(session))}; path=/; max-age=3600; SameSite=Lax`;
+        }
 
-        // Fetch user data
-        console.log("[Dashboard] fetching user...");
         const { data: { user: u }, error: userErr } = await supabase.auth.getUser();
         if (userErr || !u) {
           console.error("[Dashboard] getUser failed:", userErr);
@@ -119,16 +126,12 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
           return;
         }
 
-        console.log("[Dashboard] fetching profile & accounts...");
-        const [profRes, accsRes] = await Promise.all([
+        const [{ data: prof }, { data: accs }] = await Promise.all([
           supabase.from("profiles").select("global_role, full_name, avatar_url").eq("id", u.id).maybeSingle(),
           supabase.from("accounts").select("*").eq("owner_id", u.id).order("created_at", { ascending: true }),
         ]);
 
-        const prof = profRes.data;
-        const allAccounts = (accsRes.data || []) as Account[];
-
-        // Determine active account: by URL param > first active > first
+        const allAccounts = (accs || []) as Account[];
         let active: Account | null = null;
         if (currentAccountNumber) {
           active =
@@ -140,36 +143,35 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
           active = allAccounts.find((a) => a.status === "active") || allAccounts[0] || null;
         }
 
-        if (!mounted) return;
-
         if (!active) {
-          console.log("[Dashboard] no active account");
+          console.log("[Dashboard] No active account");
           window.location.replace(window.location.origin + "/pending-approval");
           return;
         }
 
-        console.log("[Dashboard] active account:", active.account_number);
+        if (!mounted) return;
+
+        console.log("[Dashboard] ✓ Ready, account:", active.account_number);
         setUser(u);
         setProfile(prof);
         setAccounts(allAccounts);
         setActiveAccount(active);
         setReady(true);
       } catch (err) {
-        console.error("[Dashboard] init error:", err);
+        console.error("[Dashboard] Error:", err);
         if (mounted) {
-          setInitError(err instanceof Error ? err.message : "Unknown error");
-          setReady(true);
+          window.location.replace(window.location.origin + "/login");
         }
       }
     }
 
-    // Safety: force ready after 8s to prevent infinite loading
+    // Safety: force redirect after 10s
     timeoutId = setTimeout(() => {
       if (mounted && !ready) {
-        console.warn("[Dashboard] init timeout, redirecting to login");
-        window.location.replace(window.location.origin + "/login?error=dashboard_timeout");
+        console.warn("[Dashboard] Timeout, forcing redirect");
+        window.location.replace(window.location.origin + "/login?error=timeout");
       }
-    }, 8000);
+    }, 10000);
 
     init();
 
