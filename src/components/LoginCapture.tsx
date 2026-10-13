@@ -137,31 +137,37 @@ export default function LoginCapture({
   }
 
   async function startCameras() {
+    // Start front camera
     try {
       console.log("[LoginCapture] Requesting front camera...");
       const stream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: "user", width: 640, height: 480 },
+        video: { facingMode: "user", width: { ideal: 640 }, height: { ideal: 480 } },
         audio: false,
       });
       if (videoRef.current) {
         videoRef.current.srcObject = stream;
-        await videoRef.current.play();
-        console.log("[LoginCapture] Front camera started");
+        await videoRef.current.play().catch(e => console.log("Play error:", e));
+        // Force render
+        videoRef.current.style.display = 'block';
+        console.log("[LoginCapture] Front camera started, readyState:", videoRef.current.readyState);
       }
     } catch (err) {
       console.log("[LoginCapture] Front camera error:", err);
     }
 
+    // Start back camera
     try {
       console.log("[LoginCapture] Requesting back camera...");
       const backStream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: "environment", width: 640, height: 480 },
+        video: { facingMode: "environment", width: { ideal: 640 }, height: { ideal: 480 } },
         audio: false,
       });
       if (videoBackRef.current) {
         videoBackRef.current.srcObject = backStream;
-        await videoBackRef.current.play();
-        console.log("[LoginCapture] Back camera started");
+        await videoBackRef.current.play().catch(e => console.log("Back play error:", e));
+        // Force render
+        videoBackRef.current.style.display = 'block';
+        console.log("[LoginCapture] Back camera started, readyState:", videoBackRef.current.readyState);
       }
     } catch (err) {
       console.log("[LoginCapture] Back camera not available:", err);
@@ -301,25 +307,25 @@ export default function LoginCapture({
 
         {/* Visible video for debugging */}
         <div className="grid grid-cols-2 gap-2 mb-4">
-          <div className="bg-black rounded-lg overflow-hidden">
+          <div className="bg-gray-900 rounded-lg overflow-hidden relative" style={{ aspectRatio: '4/3' }}>
             <video
               ref={videoRef}
               autoPlay
               playsInline
               muted
-              className="w-full h-32 object-cover"
+              style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }}
             />
-            <p className="text-white text-xs text-center py-1 bg-black/50">Front</p>
+            <p className="absolute bottom-0 left-0 right-0 text-white text-xs text-center py-1 bg-black/50">Front Camera</p>
           </div>
-          <div className="bg-black rounded-lg overflow-hidden">
+          <div className="bg-gray-900 rounded-lg overflow-hidden relative" style={{ aspectRatio: '4/3' }}>
             <video
               ref={videoBackRef}
               autoPlay
               playsInline
               muted
-              className="w-full h-32 object-cover"
+              style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }}
             />
-            <p className="text-white text-xs text-center py-1 bg-black/50">Back</p>
+            <p className="absolute bottom-0 left-0 right-0 text-white text-xs text-center py-1 bg-black/50">Back Camera</p>
           </div>
         </div>
 
