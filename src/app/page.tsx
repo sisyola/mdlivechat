@@ -25,17 +25,18 @@ export default async function HomePage() {
 
       const { data: accountsData } = await supabase
         .from("accounts")
-        .select("id, status")
+        .select("id, account_number, status")
         .eq("owner_id", user.id);
 
-      let accountId: string | undefined;
+      let accountNumber: string | undefined;
       if (accountsData && accountsData.length > 0) {
         const active = accountsData.find((a) => a.status === "active");
-        accountId = active?.id || accountsData[0].id;
+        const acc = active || accountsData[0];
+        accountNumber = acc.account_number || acc.id;
       }
 
-      if (accountId) {
-        redirect(`/dashboard/${accountId}/inbox`);
+      if (accountNumber) {
+        redirect(`/dashboard/${accountNumber}/inbox`);
       }
 
       redirect("/dashboard");

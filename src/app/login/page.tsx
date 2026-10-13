@@ -47,7 +47,7 @@ function LoginForm() {
 
       const { data: accounts } = await supabase
         .from("accounts")
-        .select("id, status")
+        .select("id, account_number, status")
         .eq("owner_id", data.user.id);
 
       const hasSuspended = accounts?.some((a) => a.status === "suspended");
@@ -94,9 +94,10 @@ function LoginForm() {
       }
 
       const active = accounts.find((a) => a.status === "active");
-      const accountId = active?.id || accounts[0]?.id;
-      const redirect = accountId
-        ? `/dashboard/${accountId}/inbox`
+      const acc = active || accounts[0];
+      const accountParam = acc?.account_number || acc?.id;
+      const redirect = accountParam
+        ? `/dashboard/${accountParam}/inbox`
         : searchParams.get("redirect") || "/dashboard";
 
       window.location.href = redirect;

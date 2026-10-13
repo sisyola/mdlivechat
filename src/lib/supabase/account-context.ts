@@ -47,7 +47,9 @@ export async function getAccountContext(
   let currentAccount: Account | null = null;
   if (accountNumber) {
     currentAccount =
-      allAccounts.find((a) => a.account_number === accountNumber) || null;
+      allAccounts.find((a) => a.account_number === accountNumber) ||
+      allAccounts.find((a) => a.id === accountNumber) ||
+      null;
   } else {
     currentAccount = allAccounts.find((a) => a.status === "active") || null;
   }
