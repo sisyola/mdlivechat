@@ -14,48 +14,15 @@ import { Capacitor } from "@capacitor/core";
 import { Preferences } from "@capacitor/preferences";
 import type { Account } from "@/lib/types";
 
-const STORAGE_KEY = "mdlivechat-auth";
+function getOrigin() {
+  if (typeof window === "undefined") return "https://mdlivechat.vercel.app";
+  return window.location.origin || "https://mdlivechat.vercel.app";
+}
 
-async function getStoredSession() {
-  if (typeof window === "undefined") return null;
-
-  console.log("[Dashboard] Checking for session in localStorage and Preferences...");
-
-  // 1. Check localStorage first (most reliable in WebView)
-  try {
-    const stored = localStorage.getItem("mdlivechat-auth-auth-token");
-    console.log("[Dashboard] localStorage value:", stored ? "EXISTS" : "EMPTY");
-    if (stored) {
-      const parsed = JSON.parse(stored);
-      console.log("[Dashboard] parsed keys:", Object.keys(parsed || {}));
-      if (parsed?.access_token) {
-        console.log("[Dashboard] ✓ session from localStorage");
-        return parsed;
-      }
-    }
-  } catch (err) {
-    console.error("[Dashboard] Failed to read localStorage:", err);
+function redirectToLogin() {
+  if (typeof window !== "undefined") {
+    window.location.replace(getOrigin() + "/login");
   }
-
-  // 2. Try Capacitor Preferences
-  if (Capacitor.isNativePlatform()) {
-    try {
-      const { value } = await Preferences.get({ key: "mdlivechat-auth-auth-token" });
-      console.log("[Dashboard] Preferences value:", value ? "EXISTS" : "EMPTY");
-      if (value) {
-        const parsed = JSON.parse(value);
-        if (parsed?.access_token) {
-          console.log("[Dashboard] ✓ session from Preferences");
-          return parsed;
-        }
-      }
-    } catch (err) {
-      console.error("[Dashboard] Failed to read Preferences:", err);
-    }
-  }
-
-  console.log("[Dashboard] ✗ no session found");
-  return null;
 }
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
@@ -68,64 +35,117 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   const [profile, setProfile] = useState<any>(null);
   const [initError, setInitError] = useState<string | null>(null);
 
-  // Extract accountNumber from URL
   const accountMatch = pathname?.match(/^\/dashboard\/([^\/]+)/);
   const currentAccountNumber = accountMatch?.[1];
 
   useEffect(() => {
     let mounted = true;
-    let timeoutId: ReturnType<typeof setTimeout> | null = null;
 
     async function init() {
       console.log("[Dashboard] init starting...");
 
-      // NO session? redirect immediately - no async needed
       const stored = localStorage.getItem("mdlivechat-auth-auth-token");
       console.log("[Dashboard] localStorage:", stored ? "EXISTS" : "EMPTY");
 
       if (!stored) {
-        console.log("[Dashboard] No session, redirecting NOW");
-        window.location.replace("https://mdlivechat.vercel.app/login");
+        redirectToLogin();
         return;
       }
 
-      let session;
+      let session: any;
       try {
         session = JSON.parse(stored);
       } catch {
-        console.error("[Dashboard] JSON parse failed");
-        window.location.replace("https://mdlivechat.vercel.app/login");
+        redirectToLogin();
         return;
       }
 
       if (!session?.access_token) {
-        console.log("[Dashboard] No access_token in session");
-        window.location.replace("https://mdlivechat.vercel.app/login");
+        redirectToLogin();
         return;
       }
 
-      console.log("[Dashboard] ✓ Have session, syncing...");
+      console.log("[Dashboard] ✓ Have session, syncing cookies + fetching data...");
 
+      // Set cookie for server-side (Next.js) rendering
       try {
-        const supabase = createClient();
-        await supabase.auth.setSession({
-          access_token: session.access_token,
-          refresh_token: session.refresh_token || "",
-        });
-
-        // Set cookie for server
         const projectRef = (process.env.NEXT_PUBLIC_SUPABASE_URL || "").match(/https:\/\/([^.]+)/)?.[1];
         if (projectRef) {
           document.cookie = `sb-${projectRef}-auth-token=${encodeURIComponent(JSON.stringify(session))}; path=/; max-age=3600; SameSite=Lax`;
         }
+      } catch (e) {
+        console.warn("[Dashboard] cookie set failed:", e);
+      }
 
-        const { data: { user: u }, error: userErr } = await supabase.auth.getUser();
-        if (userErr || !u) {
-          console.error("[Dashboard] getUser failed:", userErr);
-          window.location.replace("https://mdlivechat.vercel.app/login");
+      // Mirror session into Capacitor Preferences so SDK can find it on next launch
+      if (Capacitor.isNativePlatform()) {
+        try {
+          await Preferences.set({ key: "mdlivechat-auth-auth-token", value: JSON.stringify(session) });
+        } catch (e) {
+          console.warn("[Dashboard] Preferences set failed:", e);
+        }
+      }
+
+      try {
+        // Validate session by hitting Supabase REST directly (same approach as login page).
+        // This avoids supabase.auth.setSession() which can hang in WebView.
+        const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
+        const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
+
+        const userRes = await fetch(`${supabaseUrl}/auth/v1/user`, {
+          headers: {
+            apikey: supabaseKey,
+            Authorization: `Bearer ${session.access_token}`,
+          },
+        });
+
+        if (!userRes.ok) {
+          console.error("[Dashboard] /auth/v1/user failed:", userRes.status);
+          // Token expired or invalid - try refresh
+          if (session.refresh_token) {
+            const refreshRes = await fetch(`${supabaseUrl}/auth/v1/token?grant_type=refresh_token`, {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json",
+                apikey: supabaseKey,
+                Authorization: `Bearer ${supabaseKey}`,
+              },
+              body: JSON.stringify({ refresh_token: session.refresh_token }),
+            });
+
+            if (refreshRes.ok) {
+              const newAuth = await refreshRes.json();
+              session = {
+                access_token: newAuth.access_token,
+                refresh_token: newAuth.refresh_token,
+                expires_at: newAuth.expires_at,
+                expires_in: newAuth.expires_in,
+                token_type: newAuth.token_type,
+                user: newAuth.user,
+              };
+              localStorage.setItem("mdlivechat-auth-auth-token", JSON.stringify(session));
+              if (Capacitor.isNativePlatform()) {
+                await Preferences.set({ key: "mdlivechat-auth-auth-token", value: JSON.stringify(session) });
+              }
+            } else {
+              console.error("[Dashboard] refresh failed");
+              redirectToLogin();
+              return;
+            }
+          } else {
+            redirectToLogin();
+            return;
+          }
+        }
+
+        const u = session.user;
+        if (!u) {
+          redirectToLogin();
           return;
         }
 
+        // Now create supabase client - it will use the cookie we just set
+        const supabase = createClient();
         const [{ data: prof }, { data: accs }] = await Promise.all([
           supabase.from("profiles").select("global_role, full_name, avatar_url").eq("id", u.id).maybeSingle(),
           supabase.from("accounts").select("*").eq("owner_id", u.id).order("created_at", { ascending: true }),
@@ -144,8 +164,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         }
 
         if (!active) {
-          console.log("[Dashboard] No active account");
-          window.location.replace("https://mdlivechat.vercel.app/pending-approval");
+          window.location.replace(getOrigin() + "/pending-approval");
           return;
         }
 
@@ -160,24 +179,15 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
       } catch (err) {
         console.error("[Dashboard] Error:", err);
         if (mounted) {
-          window.location.replace("https://mdlivechat.vercel.app/login");
+          setInitError("Gagal memuat dashboard. Cek koneksi lalu coba lagi.");
         }
       }
     }
-
-    // Safety: force redirect after 10s
-    timeoutId = setTimeout(() => {
-      if (mounted && !ready) {
-        console.warn("[Dashboard] Timeout, forcing redirect");
-        window.location.replace("https://mdlivechat.vercel.app/login?error=timeout");
-      }
-    }, 10000);
 
     init();
 
     return () => {
       mounted = false;
-      if (timeoutId) clearTimeout(timeoutId);
     };
   }, [currentAccountNumber]);
 
@@ -195,13 +205,13 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     return (
       <div className="min-h-screen flex items-center justify-center bg-gray-50 p-4">
         <div className="max-w-md w-full bg-white rounded-xl p-6 text-center">
-          <h2 className="text-lg font-semibold text-red-600 mb-2">Error</h2>
+          <h2 className="text-lg font-semibold text-red-600 mb-2">Gagal memuat dashboard</h2>
           <p className="text-sm text-gray-700 mb-4">{initError}</p>
           <button
-            onClick={() => window.location.replace("https://mdlivechat.vercel.app/login")}
-            className="bg-blue-600 text-white px-4 py-2 rounded-lg text-sm"
+            onClick={() => window.location.reload()}
+            className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-sm"
           >
-            Back to Login
+            Coba lagi
           </button>
         </div>
       </div>
