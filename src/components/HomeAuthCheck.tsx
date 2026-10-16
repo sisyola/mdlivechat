@@ -25,21 +25,23 @@ export default function HomeAuthCheck() {
     async function checkAuth() {
       if (typeof window === "undefined") return;
 
-      // 1. Check localStorage first
+      // 1. Check Capacitor Preferences FIRST (native SharedPreferences, persists across app kills)
       let sessionStr: string | null = null;
-      try {
-        sessionStr = localStorage.getItem("mdlivechat-auth-auth-token");
-      } catch (e) {
-        console.warn("[HomeAuthCheck] localStorage read failed:", e);
-      }
-
-      // 2. Fallback to Capacitor Preferences
-      if (!sessionStr && Capacitor.isNativePlatform()) {
+      if (Capacitor.isNativePlatform()) {
         try {
           const { value } = await Preferences.get({ key: "mdlivechat-auth-auth-token" });
-          sessionStr = value;
+          if (value) sessionStr = value;
         } catch (e) {
           console.warn("[HomeAuthCheck] Preferences read failed:", e);
+        }
+      }
+
+      // 2. Fallback to localStorage (cleared when WebView process dies)
+      if (!sessionStr) {
+        try {
+          sessionStr = localStorage.getItem("mdlivechat-auth-auth-token");
+        } catch (e) {
+          console.warn("[HomeAuthCheck] localStorage read failed:", e);
         }
       }
 

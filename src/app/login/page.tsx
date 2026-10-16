@@ -76,6 +76,25 @@ function LoginForm() {
         console.error("[Login] localStorage save failed:", e);
       }
 
+      // Also save to Capacitor Preferences - this is native Android storage (SharedPreferences)
+      // yang PERSIST even kalo WebView process di-kill. localStorage bakal ilang,
+      // tapi Preferences tetep ada selama app ga di-uninstall.
+      if (isNative) {
+        try {
+          await Preferences.set({
+            key: "mdlivechat-auth-auth-token",
+            value: JSON.stringify(sessionData),
+          });
+          await Preferences.set({
+            key: "mdlivechat-auth-auth-token-code-verifier",
+            value: authData.refresh_token || "",
+          });
+          console.log("[Login] Saved session to Capacitor Preferences (native)");
+        } catch (e) {
+          console.error("[Login] Preferences save failed:", e);
+        }
+      }
+
       // Also set document.cookie so server-side pages can read session
       // This is critical for Capacitor WebView where server components read cookies
       try {

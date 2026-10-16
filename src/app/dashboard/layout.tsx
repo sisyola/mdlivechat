@@ -44,8 +44,27 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     async function init() {
       console.log("[Dashboard] init starting...");
 
-      const stored = localStorage.getItem("mdlivechat-auth-auth-token");
-      console.log("[Dashboard] localStorage:", stored ? "EXISTS" : "EMPTY");
+      // 1. Try Capacitor Preferences FIRST (native storage, persists across app kills)
+      let stored: string | null = null;
+      if (Capacitor.isNativePlatform()) {
+        try {
+          const { value } = await Preferences.get({ key: "mdlivechat-auth-auth-token" });
+          if (value) stored = value;
+        } catch (e) {
+          console.warn("[Dashboard] Preferences read failed:", e);
+        }
+      }
+
+      // 2. Fallback to localStorage
+      if (!stored) {
+        try {
+          stored = localStorage.getItem("mdlivechat-auth-auth-token");
+        } catch (e) {
+          console.warn("[Dashboard] localStorage read failed:", e);
+        }
+      }
+
+      console.log("[Dashboard] session source:", stored ? "FOUND" : "EMPTY");
 
       if (!stored) {
         redirectToLogin();
